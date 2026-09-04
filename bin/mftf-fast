@@ -1,0 +1,159 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+/**
+ * Drop-in replacement for vendor/bin/mftf that reuses a cached snapshot of
+ * MFTF's parsed object handlers.
+ *
+ * MFTF re-parses the entire XML corpus on every invocation: references are flat
+ * global names with no module qualifier, so each handler eagerly builds a
+ * registry of every object before it can resolve any single one, and nothing is
+ * cached between runs. Snapshotting those graphs takes single-test generation
+ * from roughly 25s to 7s.
+ *
+ * Extra subcommands: cache:status, cache:clear, cache:warm
+ */
+
+if (PHP_SAPI !== 'cli') {
+    fwrite(STDERR, "mftf-fast must be run as a CLI application\n");
+    exit(1);
+}
+
+// Two ways in. Installed with Composer this sits in vendor/bin and the
+// project's autoloader carries everything; carried by another program it
+// sits outside any project, so it loads its own three classes and then the
+// project's autoloader once it knows where the project is.
+$composer = null;
+foreach ([__DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $autoload) {
+    if (is_file($autoload)) {
+        require_once $autoload;
+        $composer = $autoload;
+        break;
+    }
+}
+
+if ($composer === null) {
+    // No dependencies of its own - ReflectionClass, ReflectionProperty and
+    // Throwable are the whole of it - so a four-line PSR-4 loader is enough.
+    spl_autoload_register(static function (string $class): void {
+        if (!str_starts_with($class, 'MftfFast\\')) {
+            return;
+        }
+        $file = __DIR__ . '/../src/' . str_replace('\\', '/', substr($class, strlen('MftfFast\\'))) . '.php';
+        if (is_file($file)) {
+            require_once $file;
+        }
+    });
+}
+
+use MftfFast\HandlerCache;
+use MftfFast\ProjectPaths;
+
+try {
+    $root = ProjectPaths::discover()->root();
+} catch (\RuntimeException $e) {
+    fwrite(STDERR, $e->getMessage() . "\n");
+    exit(1);
+}
+
+// Magento, MFTF and Symfony Console all come from the project under test, not
+// from here. Loaded after discovery because discovery is what says where the
+// project is; harmless when a composer autoloader already brought them.
+$projectAutoload = $root . '/vendor/autoload.php';
+if ($composer === null) {
+    if (!is_file($projectAutoload)) {
+        fwrite(STDERR, "No vendor/autoload.php in {$root}.\n");
+        exit(1);
+    }
+    require_once $projectAutoload;
+}
+
+if (!class_exists(\Magento\FunctionalTestingFramework\Console\CommandList::class)) {
+    fwrite(STDERR, "MFTF is not installed in {$root}.\n");
+    exit(1);
+}
+
+$cache = new HandlerCache($root, HandlerCache::forceInArgv($argv));
+$verbose = getenv('MFTF_FAST_QUIET') !== '1';
+$sub = $argv[1] ?? '';
+
+if ($sub === 'cache:clear') {
+    printf("Removed %d snapshot(s) from %s/var/mftf-cache\n", $cache->clear(), $root);
+    exit(0);
+}
+
+if ($sub === 'cache:status') {
+    printf("%-14s %-8s %-8s %s\n", 'HANDLER', 'CACHED', 'VALID', 'SIZE');
+    foreach ($cache->status() as $type => $s) {
+        printf(
+            "%-14s %-8s %-8s %s\n",
+            $type,
+            $s['exists'] ? 'yes' : 'no',
+            $s['valid'] ? 'yes' : 'STALE',
+            $s['bytes'] ? sprintf('%.1fMB', $s['bytes'] / 1048576) : '-'
+        );
+    }
+    exit(0);
+}
+
+if ($sub === 'cache:warm') {
+    foreach ($cache->warm() as $type => $secs) {
+        printf("  built %-14s %6.2fs\n", $type, $secs);
+    }
+    printf("  snapshotted: %s\n", implode(', ', $cache->persist([])) ?: 'nothing');
+    exit(0);
+}
+
+$t0 = microtime(true);
+$restored = $cache->restore();
+$restoreTime = microtime(true) - $t0;
+
+register_shutdown_function(static function () use ($cache, $restored, $verbose, $restoreTime) {
+    $t = microtime(true);
+    $saved = $cache->persist($restored);
+    if (!$verbose) {
+        return;
+    }
+    // Reported whatever the verbosity: a type refused here is one that will be
+    // re-parsed on every future run, and the reason is worth knowing.
+    foreach ($cache->incomplete() as $type => $missing) {
+        fwrite(STDERR, sprintf(
+            "[mftf-fast] not caching %s: the corpus declares %d it never loaded (%s%s).\n"
+            . "            Generation ran without --force, or a module is disabled on the instance.\n",
+            $type,
+            count($missing),
+            implode(', ', array_slice($missing, 0, 3)),
+            count($missing) > 3 ? ', …' : ''
+        ));
+    }
+
+    $parts = [];
+    if ($restored !== []) {
+        $parts[] = sprintf('restored %s in %.2fs', implode('+', $restored), $restoreTime);
+    }
+    if ($saved !== []) {
+        $parts[] = sprintf('snapshotted %s in %.2fs', implode('+', $saved), microtime(true) - $t);
+    }
+    if ($parts !== []) {
+        fwrite(STDERR, '[mftf-fast] ' . implode('; ', $parts) . "\n");
+    }
+});
+
+$versionFile = $root . '/vendor/magento/magento2-functional-testing-framework/composer.json';
+$version = is_file($versionFile)
+    ? (string) (json_decode((string) file_get_contents($versionFile), true)['version'] ?? 'unknown')
+    : 'unknown';
+
+try {
+    $application = new Symfony\Component\Console\Application();
+    $application->setName('MFTF CLI (cached handlers)');
+    $application->setVersion($version);
+    foreach ((new \Magento\FunctionalTestingFramework\Console\CommandList())->getCommands() as $command) {
+        $application->add($command);
+    }
+    $application->run();
+} catch (\Throwable $e) {
+    fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
+    exit(1);
+}

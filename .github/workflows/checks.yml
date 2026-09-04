@@ -1,0 +1,14 @@
+name: checks
+on:
+  push:
+  pull_request:
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+      - run: for f in bin/mftf-fast src/*.php; do php -l "$f"; done
+      - run: composer validate --strict

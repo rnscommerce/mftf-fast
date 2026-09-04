@@ -1,0 +1,26 @@
+{
+    "name": "rnscommerce/mftf-fast",
+    "description": "A drop-in for vendor/bin/mftf that snapshots MFTF's parsed object handlers, so a single test generates in seconds rather than half a minute.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["magento", "mftf", "testing"],
+    "homepage": "https://github.com/rnscommerce/mftf-fast",
+    "require": {
+        "php": ">=8.1"
+    },
+    "conflict": {
+        "magento/magento2-functional-testing-framework": "<4.0 || >=5.0"
+    },
+    "suggest": {
+        "magento/magento2-functional-testing-framework": "^4.0, the framework this release snapshots"
+    },
+    "autoload": {
+        "psr-4": {
+            "MftfFast\\": "src/"
+        }
+    },
+    "bin": ["bin/mftf-fast"],
+    "extra": {
+        "mftf": "4"
+    }
+}
