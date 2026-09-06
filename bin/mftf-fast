@@ -109,9 +109,21 @@ $t0 = microtime(true);
 $restored = $cache->restore();
 $restoreTime = microtime(true) - $t0;
 
-register_shutdown_function(static function () use ($cache, $restored, $verbose, $restoreTime) {
+// Set the instant a handler dies mid-parse, so the shutdown function below
+// can tell a completed generation from one that is only still running
+// because PHP defers shutdown functions until after exit(). Without this,
+// persist() sees the same half-built singleton either way and snapshots
+// whatever partial registry the dead run left behind as if it were done.
+$fatal = false;
+
+register_shutdown_function(static function () use ($cache, $restored, $verbose, $restoreTime, &$fatal) {
+    // A real fatal error - out of memory, a parse error in generated code -
+    // never reaches the catch below, so it is caught here instead of at $fatal.
+    $lastError = error_get_last();
+    $died = $fatal || ($lastError !== null && in_array($lastError['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true));
+
     $t = microtime(true);
-    $saved = $cache->persist($restored);
+    $saved = $cache->persist($restored, $died);
     if (!$verbose) {
         return;
     }
@@ -154,6 +166,7 @@ try {
     }
     $application->run();
 } catch (\Throwable $e) {
+    $fatal = true;
     fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
     exit(1);
 }
