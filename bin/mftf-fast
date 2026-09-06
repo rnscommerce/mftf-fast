@@ -109,7 +109,9 @@ $t0 = microtime(true);
 $restored = $cache->restore();
 $restoreTime = microtime(true) - $t0;
 
-$versionFile = $root . '/vendor/magento/magento2-functional-testing-framework/composer.json';
+// The framework that answered class_exists above: where its bootstrap put
+// FW_BP, which is vendor's copy unless something carried its own in first.
+$versionFile = (defined('FW_BP') ? FW_BP : $root . '/vendor/magento/magento2-functional-testing-framework') . '/composer.json';
 $version = is_file($versionFile)
     ? (string) (json_decode((string) file_get_contents($versionFile), true)['version'] ?? 'unknown')
     : 'unknown';

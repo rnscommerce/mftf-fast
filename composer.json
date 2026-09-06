@@ -13,10 +13,10 @@
         "symfony/console": "^6.4 || ^7.0"
     },
     "conflict": {
-        "magento/magento2-functional-testing-framework": "<4.0 || >=5.0"
+        "magento/magento2-functional-testing-framework": "<4.0"
     },
     "suggest": {
-        "magento/magento2-functional-testing-framework": "^4.0, the framework this release snapshots"
+        "magento/magento2-functional-testing-framework": "^4.0 || ^5.0 || ^6.0, the framework this snapshots"
     },
     "autoload": {
         "psr-4": {
@@ -31,8 +31,5 @@
             "tests/Fixtures/FakeHandlers.php"
         ]
     },
-    "bin": ["bin/mftf-fast"],
-    "extra": {
-        "mftf": "4"
-    }
+    "bin": ["bin/mftf-fast"]
 }

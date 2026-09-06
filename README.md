@@ -37,17 +37,12 @@ that restores. Three commands are its own:
 Set `MFTF_FAST_QUIET=1` to silence the one line it prints to stderr about
 what it restored and what it snapshotted.
 
-## Which release
+## Which MFTF
 
-The snapshots reflect MFTF's own class shapes, so each major of this package
-follows a major of MFTF. Composer picks the right one for the framework you
-have.
-
-| mftf-fast | MFTF |
-| --- | --- |
-| 4.x | 4.x |
-| 5.x | 5.x, to follow |
-| 6.x | 6.x, to follow |
+Any from 4.0 up. The package reflects on whatever framework is loaded rather
+than naming its shapes, and the snapshots are keyed on that framework's
+version, so an upgrade is a clean miss and one slow run, never a wrong answer.
+Measured on MFTF 4.7.6 and 5.3.0.
 
 ## Carried by MFTF Studio
 
@@ -56,6 +51,12 @@ this package for each MFTF it ships, and uses yours when your project has one
 installed. Outside a project the entry point loads its own three classes and
 then the project's autoloader, which is all it needs: `ReflectionClass`,
 `ReflectionProperty` and `Throwable` are its only dependencies.
+
+The framework need not be the one in vendor. Whatever bootstrapped MFTF
+before the entry point ran - the Studio does, through `auto_prepend_file` -
+is the framework `FW_BP` names, and the snapshots are keyed on that one, so
+a carried MFTF and the project's own share `var/mftf-cache` without ever
+restoring each other's graphs.
 
 ## Licence
 

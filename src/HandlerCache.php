@@ -33,6 +33,11 @@ final class HandlerCache
      * every run rather than only after an edit. An edit still invalidates the
      * whole test snapshot - names are global, so one file can change what
      * another resolves to - but that is one slow run, not all of them.
+     *
+     * Metadata is not here. OperationDefinitionObjectHandler is read when a
+     * test persists an entity, inside the Codeception process, which this
+     * binary never wraps; generation never touches it. So a metadata
+     * snapshot was only ever written by cache:warm and read back by nothing.
      */
     private const TYPES = [
         'actiongroup' => [
@@ -64,11 +69,6 @@ final class HandlerCache
             'class' => \Magento\FunctionalTestingFramework\Suite\Handlers\SuiteObjectHandler::class,
             'dir' => 'Suite',
             'declares' => 'suite',
-        ],
-        'metadata' => [
-            'class' => \Magento\FunctionalTestingFramework\DataGenerator\Handlers\OperationDefinitionObjectHandler::class,
-            'dir' => 'Metadata',
-            'declares' => 'operation',
         ],
     ];
 
@@ -451,10 +451,16 @@ final class HandlerCache
     /**
      * Serialised graphs are coupled to the framework's class shapes, so the version is part of
      * the key. Without this an MFTF upgrade yields subtly wrong objects rather than a clean miss.
+     *
+     * The framework that is loaded, not the one in vendor: FW_BP is where
+     * MFTF's bootstrap says it is, and a program carrying its own MFTF - the
+     * Studio does - bootstraps one that sits outside the project altogether.
+     * Keyed on vendor's copy, its snapshots would be served to the carried one.
      */
     private function frameworkVersion(): string
     {
-        $json = $this->root . '/vendor/magento/magento2-functional-testing-framework/composer.json';
+        $framework = defined('FW_BP') ? FW_BP : $this->root . '/vendor/magento/magento2-functional-testing-framework';
+        $json = $framework . '/composer.json';
         if (!is_file($json)) {
             return 'unknown';
         }
