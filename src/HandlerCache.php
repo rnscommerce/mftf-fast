@@ -154,7 +154,7 @@ final class HandlerCache
 
     /**
      * Snapshot any handler that got built this run and is not already cached.
-     * Safe to call from a shutdown hook: uninitialised handlers are skipped.
+     * Uninitialised handlers are skipped.
      */
     public function persist(array $alreadyRestored = []): array
     {
