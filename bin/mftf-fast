@@ -109,26 +109,33 @@ $t0 = microtime(true);
 $restored = $cache->restore();
 $restoreTime = microtime(true) - $t0;
 
-// Set the instant a handler dies mid-parse, so the shutdown function below
-// can tell a completed generation from one that is only still running
-// because PHP defers shutdown functions until after exit(). Without this,
-// persist() sees the same half-built singleton either way and snapshots
-// whatever partial registry the dead run left behind as if it were done.
-$fatal = false;
+$versionFile = $root . '/vendor/magento/magento2-functional-testing-framework/composer.json';
+$version = is_file($versionFile)
+    ? (string) (json_decode((string) file_get_contents($versionFile), true)['version'] ?? 'unknown')
+    : 'unknown';
 
-register_shutdown_function(static function () use ($cache, $restored, $verbose, $restoreTime, &$fatal) {
-    // A real fatal error - out of memory, a parse error in generated code -
-    // never reaches the catch below, so it is caught here instead of at $fatal.
-    $lastError = error_get_last();
-    $died = $fatal || ($lastError !== null && in_array($lastError['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true));
-
-    $t = microtime(true);
-    $saved = $cache->persist($restored, $died);
-    if (!$verbose) {
-        return;
+try {
+    $application = new Symfony\Component\Console\Application();
+    $application->setName('MFTF CLI (cached handlers)');
+    $application->setVersion($version);
+    foreach ((new \Magento\FunctionalTestingFramework\Console\CommandList())->getCommands() as $command) {
+        $application->add($command);
     }
-    // Reported whatever the verbosity: a type refused here is one that will be
-    // re-parsed on every future run, and the reason is worth knowing.
+    $application->setAutoExit(false);
+    $code = $application->run();
+} catch (\Throwable $e) {
+    fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
+    $code = 1;
+}
+
+// A handler that threw mid-parse is left as a live singleton holding a partial
+// registry, so only a run that finished has anything worth snapshotting.
+$t = microtime(true);
+$saved = $code === 0 ? $cache->persist($restored) : [];
+
+if ($verbose) {
+    // A type refused here is one that will be re-parsed on every future run,
+    // and the reason is worth knowing.
     foreach ($cache->incomplete() as $type => $missing) {
         fwrite(STDERR, sprintf(
             "[mftf-fast] not caching %s: the corpus declares %d it never loaded (%s%s).\n"
@@ -150,23 +157,5 @@ register_shutdown_function(static function () use ($cache, $restored, $verbose, 
     if ($parts !== []) {
         fwrite(STDERR, '[mftf-fast] ' . implode('; ', $parts) . "\n");
     }
-});
-
-$versionFile = $root . '/vendor/magento/magento2-functional-testing-framework/composer.json';
-$version = is_file($versionFile)
-    ? (string) (json_decode((string) file_get_contents($versionFile), true)['version'] ?? 'unknown')
-    : 'unknown';
-
-try {
-    $application = new Symfony\Component\Console\Application();
-    $application->setName('MFTF CLI (cached handlers)');
-    $application->setVersion($version);
-    foreach ((new \Magento\FunctionalTestingFramework\Console\CommandList())->getCommands() as $command) {
-        $application->add($command);
-    }
-    $application->run();
-} catch (\Throwable $e) {
-    $fatal = true;
-    fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
-    exit(1);
 }
+exit($code);

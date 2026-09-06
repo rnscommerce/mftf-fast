@@ -12,3 +12,5 @@ jobs:
           php-version: '8.1'
       - run: for f in bin/mftf-fast src/*.php; do php -l "$f"; done
       - run: composer validate --strict
+      - run: composer install --no-interaction --no-progress
+      - run: vendor/bin/phpunit

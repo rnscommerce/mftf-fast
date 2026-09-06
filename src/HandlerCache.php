@@ -154,22 +154,10 @@ final class HandlerCache
 
     /**
      * Snapshot any handler that got built this run and is not already cached.
-     * Safe to call from a shutdown hook: uninitialised handlers are skipped.
-     *
-     * $fatal marks a generation that died before finishing - an uncaught
-     * Throwable, or a real fatal error no catch block ever sees. Every live
-     * handler singleton at that point is whatever partial state its
-     * constructor reached before the process went down, never the finished
-     * registry a snapshot is supposed to hold. Writing it would silently
-     * replace a good snapshot with an empty one that every later run then
-     * restores and trusts, so a fatal run persists nothing at all.
+     * Uninitialised handlers are skipped.
      */
-    public function persist(array $alreadyRestored = [], bool $fatal = false): array
+    public function persist(array $alreadyRestored = []): array
     {
-        if ($fatal) {
-            return [];
-        }
-
         $saved = [];
         foreach (self::TYPES as $type => $spec) {
             if (in_array($type, $alreadyRestored, true)) {
