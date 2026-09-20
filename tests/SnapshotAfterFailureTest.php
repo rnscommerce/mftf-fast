@@ -36,6 +36,15 @@ final class SnapshotAfterFailureTest extends TestCase
         self::assertFileExists($this->snapshot());
     }
 
+    public function testRunFinishedWithErrorsIsSnapshotted(): void
+    {
+        [$code, $stderr] = $this->generate('--die=errors');
+
+        self::assertSame(1, $code);
+        self::assertStringContainsString('snapshotted test', $stderr);
+        self::assertFileExists($this->snapshot());
+    }
+
     public function testRunKilledByAnErrorWritesNothing(): void
     {
         [$code, $stderr] = $this->generate('--die=error');
