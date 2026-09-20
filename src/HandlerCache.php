@@ -259,7 +259,11 @@ final class HandlerCache
             $file = $this->file($type);
             $valid = false;
             if (is_file($file)) {
-                $blob = @unserialize((string)file_get_contents($file), ['allowed_classes' => true]);
+                try {
+                    $blob = self::decode((string)file_get_contents($file));
+                } catch (Throwable $e) {
+                    $blob = null;
+                }
                 $valid = is_array($blob) && ($blob['sig'] ?? null) === $this->signature($type);
             }
             $out[$type] = [
