@@ -453,8 +453,8 @@ final class HandlerCache
      * the key. Without this an MFTF upgrade yields subtly wrong objects rather than a clean miss.
      *
      * The framework that is loaded, not the one in vendor: FW_BP is where
-     * MFTF's bootstrap says it is, and a program carrying its own MFTF - the
-     * Studio does - bootstraps one that sits outside the project altogether.
+     * MFTF's bootstrap says it is, and a program carrying its own MFTF
+     * bootstraps one that sits outside the project altogether.
      * Keyed on vendor's copy, its snapshots would be served to the carried one.
      */
     private function frameworkVersion(): string
