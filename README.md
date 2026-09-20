@@ -14,7 +14,10 @@ a wrong answer.
 
 ## Install
 
+The package is not on Packagist, so Composer is told where it lives first:
+
 ```
+composer config repositories.mftf-fast vcs https://github.com/rnscommerce/mftf-fast
 composer require --dev rnscommerce/mftf-fast
 ```
 
@@ -44,18 +47,17 @@ than naming its shapes, and the snapshots are keyed on that framework's
 version, so an upgrade is a clean miss and one slow run, never a wrong answer.
 Measured on MFTF 4.7.6 and 5.3.0.
 
-## Carried by MFTF Studio
+## Outside a project
 
-[MFTF Studio](https://github.com/rnscommerce/mftf-studio) carries a copy of
-this package for each MFTF it ships, and uses yours when your project has one
-installed. Outside a project the entry point loads its own three classes and
-then the project's autoloader, which is all it needs: `ReflectionClass`,
+The package does not have to be installed in the project it runs against. A
+copy kept anywhere works: the entry point loads its own three classes and then
+the project's autoloader, which is all it needs. `ReflectionClass`,
 `ReflectionProperty` and `Throwable` are its only dependencies.
 
-The framework need not be the one in vendor. Whatever bootstrapped MFTF
-before the entry point ran - the Studio does, through `auto_prepend_file` -
-is the framework `FW_BP` names, and the snapshots are keyed on that one, so
-a carried MFTF and the project's own share `var/mftf-cache` without ever
+The framework need not be the one in vendor either. Whatever bootstrapped MFTF
+before the entry point ran - through `auto_prepend_file`, say - is the
+framework `FW_BP` names, and the snapshots are keyed on that one. An MFTF kept
+outside the project and the project's own share `var/mftf-cache` without ever
 restoring each other's graphs.
 
 ## Licence
