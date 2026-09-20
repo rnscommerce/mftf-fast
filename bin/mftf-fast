@@ -116,7 +116,23 @@ $version = is_file($versionFile)
     ? (string) (json_decode((string) file_get_contents($versionFile), true)['version'] ?? 'unknown')
     : 'unknown';
 
+$output = null;
 try {
+    // Generation that ran to its end says so, with or without "(with errors)"
+    // after it, and nothing else does: MFTF returns the same 1 for a project whose
+    // tests share a test case id as for a parser that threw half way.
+    $output = new class extends Symfony\Component\Console\Output\ConsoleOutput {
+        public bool $generationFinished = false;
+
+        protected function doWrite($message, $newline): void
+        {
+            if (str_contains((string) $message, 'Generate Tests Command Run')) {
+                $this->generationFinished = true;
+            }
+            parent::doWrite($message, $newline);
+        }
+    };
+
     $application = new Symfony\Component\Console\Application();
     $application->setName('MFTF CLI (cached handlers)');
     $application->setVersion($version);
@@ -124,16 +140,17 @@ try {
         $application->add($command);
     }
     $application->setAutoExit(false);
-    $code = $application->run();
+    $code = $application->run(null, $output);
 } catch (\Throwable $e) {
     fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
     $code = 1;
 }
 
 // A handler that threw mid-parse is left as a live singleton holding a partial
-// registry, so only a run that finished has anything worth snapshotting.
+// registry, so only a run that finished has anything worth snapshotting. One
+// that finished with errors parsed everything a clean one would have.
 $t = microtime(true);
-$saved = $code === 0 ? $cache->persist($restored) : [];
+$saved = $code === 0 || $output?->generationFinished ? $cache->persist($restored) : [];
 
 if ($verbose) {
     // A type refused here is one that will be re-parsed on every future run,

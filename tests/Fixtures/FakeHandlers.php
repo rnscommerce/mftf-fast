@@ -64,7 +64,13 @@ if (!class_exists(CommandList::class, false)) {
 
                 protected function execute(InputInterface $input, OutputInterface $output): int
                 {
-                    TestObjectHandler::getInstance((string) $input->getOption('die'));
+                    $die = (string) $input->getOption('die');
+                    TestObjectHandler::getInstance($die);
+                    if ($die === 'errors') {
+                        $output->writeln('Generate Tests Command Run (with errors)');
+                        return Command::FAILURE;
+                    }
+                    $output->writeln('Generate Tests Command Run');
                     return Command::SUCCESS;
                 }
             };
