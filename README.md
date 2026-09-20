@@ -6,11 +6,16 @@ instead of half a minute.
 MFTF re-parses the whole XML corpus on every invocation. References are flat
 global names with no module qualifier, so every handler builds a registry of
 every object before it can resolve any one of them, and nothing is kept
-between runs. That is 15 to 25 seconds before a single test is generated.
-`mftf-fast` snapshots the parsed handlers into `var/mftf-cache` and puts them
-back on the next run. The snapshot is keyed on the corpus, the enabled
-modules and the framework version, so a change to any of them is a miss, not
-a wrong answer.
+between runs. `mftf-fast` snapshots the parsed handlers into `var/mftf-cache`
+and puts them back on the next run.
+
+Generating one test on Magento Open Source 2.4.7-p10 with MFTF 4.7.6:
+
+| | |
+| --- | --- |
+| `vendor/bin/mftf` | 31 s |
+| `mftf-fast`, first run, which parses and snapshots | 26 s |
+| `mftf-fast`, every run after | 2 to 4 s |
 
 ## Install
 
@@ -37,8 +42,39 @@ that restores. Three commands are its own:
 | `cache:warm` | parse everything now and snapshot it |
 | `cache:clear` | remove the snapshots |
 
+`--force` makes MFTF merge every module, enabled or not, so a run with it and
+a run without it parse two different corpora and keep a snapshot each.
+`cache:status --force` describes the ones `generate:tests --force` restores,
+`cache:status` the others, and `cache:clear` removes both.
+
 Set `MFTF_FAST_QUIET=1` to silence the one line it prints to stderr about
 what it restored and what it snapshotted.
+
+Run it from inside the project: it finds the project by walking up from the
+working directory to the first folder that holds `dev/tests/acceptance` and
+`vendor`.
+
+## What makes a snapshot stale
+
+A snapshot is keyed on everything that changes what MFTF would have parsed, so
+a change to any of it is a miss and one slow run, never a wrong answer:
+
+- the path, size and modification time of every XML file under a `Test/Mftf`
+  folder in `vendor` and `app/code`
+- the modules enabled in `app/etc/config.php`
+- whether the run had `--force`
+- the MFTF version, the PHP version and `MAGENTO_BP`
+
+Test XML kept anywhere else, `dev/tests/acceptance/tests/functional` included,
+is not part of the key. After changing a file there, run `cache:clear`.
+
+A handler that loaded less than the XML declares is not snapshotted, and the
+line on stderr says which and what was missing. It happens when a run without
+`--force` meets an installation with a module switched off.
+
+Snapshots are written with igbinary when the extension is there, and with
+`serialize` when it is not. igbinary is worth installing: it stores the test
+registry in 12 MB against 152 MB, and reads it back in a third of the time.
 
 ## Which MFTF
 
