@@ -98,10 +98,18 @@ if ($sub === 'cache:status') {
 }
 
 if ($sub === 'cache:warm') {
-    foreach ($cache->warm() as $type => $secs) {
+    // cache:warm [--force] [type ...]: only what is named, and of that only what is not already good.
+    $types = array_values(array_filter(array_slice($argv, 2), static fn ($arg) => $arg !== '' && $arg[0] !== '-'));
+    $unknown = array_diff($types, HandlerCache::types());
+    if ($unknown !== []) {
+        fwrite(STDERR, sprintf("  no snapshot is kept for: %s\n  kept: %s\n", implode(', ', $unknown), implode(', ', HandlerCache::types())));
+        exit(1);
+    }
+    $restored = $cache->restore();
+    foreach ($cache->warm($types, $restored) as $type => $secs) {
         printf("  built %-14s %6.2fs\n", $type, $secs);
     }
-    printf("  snapshotted: %s\n", implode(', ', $cache->persist([])) ?: 'nothing');
+    printf("  snapshotted: %s\n", implode(', ', $cache->persist($restored)) ?: 'nothing');
     exit(0);
 }
 

@@ -134,7 +134,8 @@ final class HandlerCache
         $restored = [];
         foreach (self::TYPES as $type => $spec) {
             $file = $this->file($type);
-            if (!is_file($file)) {
+            // No framework to restore into says nothing about the snapshot: leave it be.
+            if (!is_file($file) || !class_exists($spec['class'])) {
                 continue;
             }
             try {
@@ -224,16 +225,35 @@ final class HandlerCache
     }
 
     /**
-     * Build every cacheable handler and snapshot it. Only safe as a standalone action - it
-     * creates MftfApplicationConfig, which is first-write-wins, so no MFTF command may follow.
+     * The types a snapshot is kept for, as cache:warm takes them.
+     *
+     * @return string[]
      */
-    public function warm(): array
+    public static function types(): array
+    {
+        return array_keys(self::TYPES);
+    }
+
+    /**
+     * Build the named handlers - every cacheable one when none is named - in the mode this
+     * cache was opened in, so what is built is what its snapshots are filed under. A type in
+     * $skip is left alone: its snapshot was just restored and is still good. Only safe as a
+     * standalone action - it creates MftfApplicationConfig, which is first-write-wins, so no
+     * MFTF command may follow.
+     *
+     * @param string[] $types
+     * @param string[] $skip
+     */
+    public function warm(array $types = [], array $skip = []): array
     {
         $cfg = \Magento\FunctionalTestingFramework\Config\MftfApplicationConfig::class;
-        $cfg::create(false, $cfg::GENERATION_PHASE, false, $cfg::LEVEL_DEFAULT, true);
+        $cfg::create($this->force, $cfg::GENERATION_PHASE, false, $cfg::LEVEL_DEFAULT, true);
 
         $times = [];
         foreach (self::TYPES as $type => $spec) {
+            if (($types !== [] && !in_array($type, $types, true)) || in_array($type, $skip, true)) {
+                continue;
+            }
             $t = microtime(true);
             $spec['class']::getInstance();
             $times[$type] = microtime(true) - $t;
