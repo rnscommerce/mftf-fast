@@ -134,7 +134,8 @@ final class HandlerCache
         $restored = [];
         foreach (self::TYPES as $type => $spec) {
             $file = $this->file($type);
-            if (!is_file($file)) {
+            // No framework to restore into says nothing about the snapshot: leave it be.
+            if (!is_file($file) || !class_exists($spec['class'])) {
                 continue;
             }
             try {
