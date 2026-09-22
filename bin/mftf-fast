@@ -12,7 +12,7 @@ declare(strict_types=1);
  * cached between runs. Snapshotting those graphs takes single-test generation
  * from roughly 25s to 7s.
  *
- * Extra subcommands: cache:status, cache:clear, cache:warm
+ * Extra subcommands: cache:status, cache:clear, cache:warm, describe:test
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -110,6 +110,34 @@ if ($sub === 'cache:warm') {
         printf("  built %-14s %6.2fs\n", $type, $secs);
     }
     printf("  snapshotted: %s\n", implode(', ', $cache->persist($restored)) ?: 'nothing');
+    exit(0);
+}
+
+if ($sub === 'describe:test') {
+    // describe:test [--force] <name>: the test as MFTF holds it merged, as JSON.
+    $names = array_values(array_filter(array_slice($argv, 2), static fn ($arg) => $arg !== '' && $arg[0] !== '-'));
+    if (count($names) !== 1) {
+        fwrite(STDERR, "usage: mftf-fast describe:test [--force] <test name>\n");
+        exit(1);
+    }
+    $restored = $cache->restore();
+    $cfg = \Magento\FunctionalTestingFramework\Config\MftfApplicationConfig::class;
+    $cfg::create(HandlerCache::forceInArgv($argv), $cfg::GENERATION_PHASE, false, $cfg::LEVEL_DEFAULT, true);
+    // MFTF prints its deprecations to stdout as it parses; only the JSON goes there.
+    ob_start();
+    try {
+        $described = MftfFast\Describe::test($names[0]);
+    } catch (\Throwable $e) {
+        ob_end_clean();
+        fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
+        exit(1);
+    }
+    ob_end_clean();
+    echo json_encode($described, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), "\n";
+    $saved = $cache->persist($restored);
+    if ($verbose && ($restored !== [] || $saved !== [])) {
+        fwrite(STDERR, sprintf("[mftf-fast] restored %s; snapshotted %s\n", implode('+', $restored) ?: 'nothing', implode('+', $saved) ?: 'nothing'));
+    }
     exit(0);
 }
 
