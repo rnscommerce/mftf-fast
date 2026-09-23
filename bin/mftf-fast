@@ -128,7 +128,8 @@ if ($sub === 'describe:test') {
     try {
         $described = MftfFast\Describe::test($names[0]);
     } catch (\Throwable $e) {
-        ob_end_clean();
+        // What MFTF printed before it gave up names the fault; the exception only summarises it.
+        fwrite(STDERR, ob_get_clean());
         fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
         exit(1);
     }
