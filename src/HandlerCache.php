@@ -435,6 +435,21 @@ final class HandlerCache
             }
         }
 
+        foreach ($this->testOnlyModuleRoots() as [$dir, $depth]) {
+            $cmd = 'find ' . escapeshellarg($dir)
+                . " -name '*.xml' -not -path '*/.*' -not -path '*/_generated/*' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null";
+            foreach (explode("\n", (string)shell_exec($cmd)) as $line) {
+                $path = (string)strstr($line, "\t", true);
+                $folder = explode('/', substr($path, strlen($dir) + 1))[$depth] ?? null;
+                foreach (self::TYPES as $type => $spec) {
+                    if ($folder === $spec['dir']) {
+                        $buckets[$type][] = $line;
+                        break;
+                    }
+                }
+            }
+        }
+
         // MAGENTO_BP changes which corpus is discovered at all, so a snapshot
         // taken under one is not valid under another. Neither is one taken
         // under a different set of enabled modules: MFTF merges a module's
@@ -458,6 +473,26 @@ final class HandlerCache
             $out[$type] = md5($stamp . '|' . implode("\n", $lines));
         }
         return $out;
+    }
+
+    /**
+     * Where test-only modules sit, whose XML is straight under the module
+     * rather than under Test/Mftf: beside the acceptance tests as
+     * Vendor/Module, and each CUSTOM_MODULE_PATHS entry, a module itself.
+     *
+     * @return list<array{0:string,1:int}> each directory, and how many
+     *         folders below it the Test, Data or Section folder sits
+     */
+    private function testOnlyModuleRoots(): array
+    {
+        $roots = [[$this->root . '/dev/tests/acceptance/tests/functional', 2]];
+        foreach (explode(',', (string) getenv('CUSTOM_MODULE_PATHS')) as $path) {
+            $path = rtrim(trim($path), '/');
+            if ($path !== '') {
+                $roots[] = [str_starts_with($path, '/') ? $path : $this->root . '/' . $path, 0];
+            }
+        }
+        return array_values(array_filter($roots, static fn(array $root): bool => is_dir($root[0])));
     }
 
     /**
