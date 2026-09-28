@@ -25,6 +25,21 @@ final class Describe
         return (new self())->describeTest($name);
     }
 
+    /** An action group on its own, described as a test describes the groups it calls. */
+    public static function actionGroup(string $name): array
+    {
+        return (new self())->describeGroup($name);
+    }
+
+    private function describeGroup(string $name): array
+    {
+        $this->group($name);
+        if (!isset($this->groups[$name])) {
+            throw new \RuntimeException("No action group is named {$name}.");
+        }
+        return $this->groups[$name];
+    }
+
     private function describeTest(string $name): array
     {
         $test = TestObjectHandler::getInstance()->getObject($name);
