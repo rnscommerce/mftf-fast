@@ -12,7 +12,7 @@ declare(strict_types=1);
  * cached between runs. Snapshotting those graphs takes single-test generation
  * from roughly 25s to 7s.
  *
- * Extra subcommands: cache:status, cache:clear, cache:warm, describe:test
+ * Extra subcommands: cache:status, cache:clear, cache:warm, describe:test, describe:group
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -113,11 +113,13 @@ if ($sub === 'cache:warm') {
     exit(0);
 }
 
-if ($sub === 'describe:test') {
-    // describe:test [--force] <name>: the test as MFTF holds it merged, as JSON.
+if ($sub === 'describe:test' || $sub === 'describe:group') {
+    // describe:test|describe:group [--force] <name>: the test or action group as MFTF holds it merged, as JSON.
     $names = array_values(array_filter(array_slice($argv, 2), static fn ($arg) => $arg !== '' && $arg[0] !== '-'));
     if (count($names) !== 1) {
-        fwrite(STDERR, "usage: mftf-fast describe:test [--force] <test name>\n");
+        fwrite(STDERR, $sub === 'describe:test'
+            ? "usage: mftf-fast describe:test [--force] <test name>\n"
+            : "usage: mftf-fast describe:group [--force] <action group name>\n");
         exit(1);
     }
     $restored = $cache->restore();
@@ -126,7 +128,7 @@ if ($sub === 'describe:test') {
     // MFTF prints its deprecations to stdout as it parses; only the JSON goes there.
     ob_start();
     try {
-        $described = MftfFast\Describe::test($names[0]);
+        $described = $sub === 'describe:test' ? MftfFast\Describe::test($names[0]) : MftfFast\Describe::actionGroup($names[0]);
     } catch (\Throwable $e) {
         // What MFTF printed before it gave up names the fault; the exception only summarises it.
         fwrite(STDERR, ob_get_clean());

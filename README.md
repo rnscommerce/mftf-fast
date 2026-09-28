@@ -42,6 +42,7 @@ that restores. Three commands are its own:
 | `cache:warm` | parse everything now and snapshot it |
 | `cache:clear` | remove the snapshots |
 | `describe:test <name>` | the test as MFTF holds it merged, as JSON: every file folded, `extends` resolved, steps in MFTF's order, action groups as calls, each group described alongside with its own steps |
+| `describe:group <name>` | an action group on its own, in the shape `describe:test` gives each group it calls |
 
 `--force` makes MFTF merge every module, enabled or not, so a run with it and
 a run without it parse two different corpora and keep a snapshot each.
