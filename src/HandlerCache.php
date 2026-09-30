@@ -467,6 +467,10 @@ final class HandlerCache
             . '|bp=' . (string) getenv('MAGENTO_BP')
             . '|mods=' . $this->enabledModules()
             . '|force=' . ($this->force ? '1' : '0');
+        // A suite's include and exclude groups are turned into test names when
+        // it is parsed, so a test gaining or losing a group changes the suite.
+        $buckets['suite'] = array_merge($buckets['suite'], $buckets['test']);
+
         $out = [];
         foreach ($buckets as $type => $lines) {
             sort($lines);

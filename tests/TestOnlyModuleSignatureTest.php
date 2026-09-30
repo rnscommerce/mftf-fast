@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MftfFast\Tests;
 
+use MftfFast\HandlerCache;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -49,6 +50,15 @@ final class TestOnlyModuleSignatureTest extends TestCase
         self::assertSame('STALE', $this->testSnapshotValidity($env));
     }
 
+    public function testNewTestChangesTheSuiteSignature(): void
+    {
+        $before = $this->signature('suite');
+
+        $this->write('vendor/acme/module-sandbox/Test/Mftf/Test/AcmeNewTest.xml');
+
+        self::assertNotSame($before, $this->signature('suite'));
+    }
+
     public function testGeneratedCodeBesideTheAcceptanceTestsLeavesTheSnapshotAlone(): void
     {
         $this->fast('generate:tests');
@@ -73,6 +83,13 @@ final class TestOnlyModuleSignatureTest extends TestCase
         [, $out] = $this->fast('cache:status', $env);
         preg_match('/^test\s+\S+\s+(\S+)/m', $out, $m);
         return $m[1] ?? 'missing';
+    }
+
+    /** A fresh cache's signature for a type, since one cache reads the files once. */
+    private function signature(string $type): string
+    {
+        $signature = new \ReflectionMethod(HandlerCache::class, 'signature');
+        return $signature->invoke(new HandlerCache($this->root), $type);
     }
 
     /** @return array{0:int,1:string} exit code and everything printed */
