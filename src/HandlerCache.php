@@ -22,7 +22,7 @@ use Throwable;
 final class HandlerCache
 {
     /** Bump when the snapshot layout changes, to invalidate every existing blob. */
-    private const FORMAT = 3;
+    private const FORMAT = 5;
 
     /**
      * Handlers worth caching, mapped to the Test/Mftf subdirectory that feeds them.
@@ -78,6 +78,11 @@ final class HandlerCache
     private ?ModuleState $modules = null;
     private string $dir;
     private ?array $signatures = null;
+    /** @var array<string, list<string>> each type's scan lines: path, mtime, size */
+    private array $lines = [];
+    private string $stamp = '';
+    /** @var array<string, Patch> the types restored stale, to be patched rather than rebuilt */
+    private array $patches = [];
     /** Types refused at save because the load they came from was partial. */
     private array $incomplete = [];
     /**
@@ -95,7 +100,7 @@ final class HandlerCache
     public function __construct(string $projectRoot, bool $force = false)
     {
         $this->root = rtrim($projectRoot, '/');
-        $this->dir = $this->root . '/var/mftf-cache';
+        $this->dir = (string) getenv('MFTF_FAST_CACHE_DIR') ?: $this->root . '/var/mftf-cache';
         $this->force = $force;
     }
 
@@ -129,10 +134,13 @@ final class HandlerCache
     /**
      * Restore every handler whose snapshot is still valid. Returns the types restored.
      */
-    public function restore(): array
+    public function restore(bool $patchable = false, array $skip = []): array
     {
         $restored = [];
         foreach (self::TYPES as $type => $spec) {
+            if (in_array($type, $skip, true)) {
+                continue;
+            }
             $file = $this->file($type);
             // No framework to restore into says nothing about the snapshot: leave it be.
             if (!is_file($file) || !class_exists($spec['class'])) {
@@ -140,10 +148,17 @@ final class HandlerCache
             }
             try {
                 $blob = self::decode((string) file_get_contents($file));
-                if (!is_array($blob) || ($blob['sig'] ?? null) !== $this->signature($type)) {
+                if (!is_array($blob)) {
                     continue;
                 }
-                $this->inject($spec['class'], $blob['state']);
+                if (($blob['sig'] ?? null) !== $this->signature($type)) {
+                    if ($patchable && Patch::patchable($type) && ($blob['index']['stamp'] ?? null) === $this->stamp) {
+                        $this->inject($spec['class'], $type === 'test' ? $this->unpackTests($blob['state'], true) : $blob['state']);
+                        $this->patches[$type] = $this->patchFor($type, $blob['index']);
+                    }
+                    continue;
+                }
+                $this->inject($spec['class'], $type === 'test' ? $this->unpackTests($blob['state'], $patchable) : $blob['state']);
                 $restored[] = $type;
             } catch (Throwable $e) {
                 // A stale or shape-changed blob must never be trusted - drop it and rebuild.
@@ -170,6 +185,9 @@ final class HandlerCache
                     continue;
                 }
                 $state = $this->capture($spec['class'], $obj);
+                if ($type === 'test') {
+                    $state['tests'] = $this->packTests($state['tests']);
+                }
 
                 // The signature describes the files on disk; the snapshot holds
                 // whatever MFTF actually loaded. Those differ whenever module
@@ -184,6 +202,9 @@ final class HandlerCache
                 }
 
                 $blob = ['sig' => $this->signature($type), 'state' => $state];
+                if (Patch::patchable($type)) {
+                    $blob['index'] = ($this->patches[$type] ?? $this->patchFor($type, null))->index();
+                }
                 if (!is_dir($this->dir) && !@mkdir($this->dir, 0775, true) && !is_dir($this->dir)) {
                     continue;
                 }
@@ -198,6 +219,179 @@ final class HandlerCache
         }
         return $saved;
     }
+
+    /** @return array<string, string> path => "mtime\tsize" for every file of a type */
+    private function filesOf(string $type): array
+    {
+        $this->signature($type);
+        $files = [];
+        foreach ($this->lines[$type] as $line) {
+            [$path, $rest] = explode("\t", $line, 2);
+            $files[$path] = $rest;
+        }
+        return $files;
+    }
+
+    private function patchFor(string $type, ?array $index): Patch
+    {
+        $class = self::TYPES[$type]['class'];
+        $files = fn () => $this->filesOf($type);
+        return $index === null
+            ? Patch::fresh($type, $class, $this->stamp, $files)
+            : Patch::stale($type, $class, $this->stamp, $files, $index);
+    }
+
+    /**
+     * Brings every handler restored stale up to date from the files that
+     * changed. Returns what was read again, or null when nothing was stale.
+     *
+     * @return array{changed:int, names:int}|null
+     */
+    public function patch(): ?array
+    {
+        if ($this->patches === []) {
+            return null;
+        }
+        $done = ['changed' => 0, 'names' => 0];
+        foreach ($this->patches as $type => $patch) {
+            $result = $patch->apply();
+            if ($result === null) {
+                $this->drop($type);
+                continue;
+            }
+            $done['changed'] += $result['changed'];
+            $done['names'] += count($result['names']);
+            if ($type === 'test' && $this->packedTests !== null) {
+                foreach ($result['names'] as $name => $declared) {
+                    if ($declared) {
+                        $this->packedTests[$name] = null;
+                    } else {
+                        unset($this->packedTests[$name]);
+                    }
+                }
+            }
+        }
+        return $done;
+    }
+
+    /** Runs the schema checks the patches put off; false when one fails, and none must be kept. */
+    public function validatePatch(): bool
+    {
+        $valid = true;
+        foreach ($this->patches as $patch) {
+            $valid = $patch->validate() && $valid;
+        }
+        return $valid;
+    }
+
+    /** Puts each patched handler back in MFTF's own order. */
+    public function settleOrder(): void
+    {
+        foreach ($this->patches as $type => $patch) {
+            $rank = $patch->order();
+            if ($rank === null) {
+                continue;
+            }
+            $byRank = static fn ($a, $b) => ($rank[$a] ?? PHP_INT_MAX) <=> ($rank[$b] ?? PHP_INT_MAX);
+            $class = self::TYPES[$type]['class'];
+            $property = $type === 'test' ? 'tests' : 'actionGroups';
+            \Closure::bind(function () use ($byRank, $property) {
+                uksort($this->$property, $byRank);
+            }, $class::getInstance(), $class)();
+            if ($type === 'test' && $this->packedTests !== null) {
+                uksort($this->packedTests, $byRank);
+            }
+        }
+    }
+
+    /** Drops the snapshot of every type a patch touched, so the next run reads them whole. */
+    public function forgetPatched(): void
+    {
+        foreach (array_keys($this->patches) as $type) {
+            $this->forget($type);
+        }
+    }
+
+    /** Leaves every patched handler for MFTF to build, so its own read reports what is wrong. */
+    public function dropPatched(): void
+    {
+        foreach (array_keys($this->patches) as $type) {
+            $this->drop($type);
+        }
+    }
+
+    private function drop(string $type): void
+    {
+        if ($type === 'test') {
+            $this->packedTests = null;
+        }
+        unset($this->patches[$type]);
+        $this->singletonProperty(new ReflectionClass(self::TYPES[$type]['class']))->setValue(null, null);
+    }
+
+    /**
+     * Each test is kept encoded on its own, so describing one decodes only it.
+     * Restored for describing, the tests stay encoded here until asked for.
+     */
+    private ?array $packedTests = null;
+
+    private function unpackTests(array $state, bool $lazy): array
+    {
+        if ($lazy) {
+            $this->packedTests = $state['tests'];
+            $state['tests'] = [];
+            return $state;
+        }
+        $state['tests'] = array_map(static fn (string $packed) => igbinary_unserialize($packed), $state['tests']);
+        return $state;
+    }
+
+    /** Encodes the tests, carrying over unchanged those restored still encoded; a null marks one patched. */
+    private function packTests(array $live): array
+    {
+        if ($this->packedTests === null) {
+            return array_map(static fn ($test) => igbinary_serialize($test), $live);
+        }
+        $packed = [];
+        foreach ($this->packedTests as $name => $kept) {
+            $packed[$name] = $kept ?? igbinary_serialize($live[$name]);
+        }
+        return $packed;
+    }
+
+    /** Decodes every restored test into the handler, in MFTF's order, for whatever reads them all. */
+    public function unpackAll(): void
+    {
+        if ($this->packedTests === null) {
+            return;
+        }
+        $class = self::TYPES['test']['class'];
+        $packed = $this->packedTests;
+        \Closure::bind(function () use ($packed) {
+            $all = [];
+            foreach ($packed as $name => $raw) {
+                $all[$name] = $this->tests[$name] ?? igbinary_unserialize($raw);
+            }
+            $this->tests = $all;
+        }, $class::getInstance(), $class)();
+    }
+
+    /** Decodes a restored test, and every test it extends, into the handler. */
+    public function unpackTest(string $name): void
+    {
+        $class = self::TYPES['test']['class'];
+        $tests = \Closure::bind(fn &() => $this->tests, $class::getInstance(), $class);
+        $live = &$tests();
+        $seen = [];
+        while ($name !== null && !isset($seen[$name])) {
+            $seen[$name] = true;
+            if (!isset($live[$name]) && isset($this->packedTests[$name])) {
+                $live[$name] = igbinary_unserialize($this->packedTests[$name]);
+            }
+            $name = isset($live[$name]) ? $live[$name]->getParentName() : null;
+        }
+    }
+
 
     /**
      * The object graphs are large and read on every run, so how they are
@@ -259,6 +453,12 @@ final class HandlerCache
             $times[$type] = microtime(true) - $t;
         }
         return $times;
+    }
+
+    /** Drops one type's snapshot, so the next run builds it from MFTF's own read. */
+    public function forget(string $type): void
+    {
+        @unlink($this->file($type));
     }
 
     public function clear(): int
@@ -418,9 +618,12 @@ final class HandlerCache
             return array_map(static fn($b) => 'empty', $buckets);
         }
 
-        $cmd = 'find ' . implode(' ', array_map('escapeshellarg', $roots))
-            . " -path '*/Test/Mftf/*' -name '*.xml' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null";
-        $lines = explode("\n", (string)shell_exec($cmd));
+        $dirs = [];
+        foreach ($roots as $root) {
+            array_push($dirs, ...$this->mftfDirs($root));
+        }
+        $lines = $dirs === [] ? [] : explode("\n", (string) shell_exec('find ' . implode(' ', array_map('escapeshellarg', $dirs))
+            . " -name '*.xml' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null"));
 
         foreach ($lines as $line) {
             if ($line === '') {
@@ -434,7 +637,6 @@ final class HandlerCache
                 }
             }
         }
-
         foreach ($this->testOnlyModuleRoots() as [$dir, $depth]) {
             $cmd = 'find ' . escapeshellarg($dir)
                 . " -name '*.xml' -not -path '*/.*' -not -path '*/_generated/*' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null";
@@ -472,11 +674,45 @@ final class HandlerCache
         $buckets['suite'] = array_merge($buckets['suite'], $buckets['test']);
 
         $out = [];
+        $this->stamp = $stamp;
         foreach ($buckets as $type => $lines) {
             sort($lines);
+            $this->lines[$type] = $lines;
             $out[$type] = md5($stamp . '|' . implode("\n", $lines));
         }
         return $out;
+    }
+
+    /**
+     * Every Test/Mftf folder under a root. Walking vendor for them is most of
+     * a scan, so vendor's are kept until composer installs something or a
+     * package folder changes; a folder made by hand deeper in a package than
+     * its own top is not noticed until then.
+     *
+     * @return list<string>
+     */
+    private function mftfDirs(string $root): array
+    {
+        $walk = static fn () => array_values(array_filter(explode("\n", (string) shell_exec('find ' . escapeshellarg($root)
+            . " -type d -path '*/Test/Mftf' -prune -print 2>/dev/null"))));
+        if (basename($root) !== 'vendor') {
+            return $walk();
+        }
+        $installed = $root . '/composer/installed.json';
+        $key = md5(implode('|', array_map(
+            static fn ($path) => $path . ':' . @filemtime($path),
+            [$installed, ...glob($root . '/*/*', GLOB_ONLYDIR)]
+        )) . ':' . @filesize($installed));
+        $file = $this->dir . '/vendor-mftf-dirs.json';
+        $kept = json_decode((string) @file_get_contents($file), true);
+        if (($kept['key'] ?? null) === $key) {
+            return $kept['dirs'];
+        }
+        $dirs = $walk();
+        if (is_dir($this->dir) || @mkdir($this->dir, 0777, true)) {
+            @file_put_contents($file, json_encode(['key' => $key, 'dirs' => $dirs]));
+        }
+        return $dirs;
     }
 
     /**
