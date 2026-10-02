@@ -27,14 +27,14 @@ final class Patch
             'root' => 'tests',
             'tag' => 'test',
             'property' => 'tests',
-            'nameKind' => NameValidationUtil::TEST_NAME,
+            'nameKind' => 'test name',
         ],
         'actiongroup' => [
             'reader' => self::NS . 'Config\\Reader\\ActionGroupData',
             'root' => 'actionGroups',
             'tag' => 'actionGroup',
             'property' => 'actionGroups',
-            'nameKind' => NameValidationUtil::ACTION_GROUP_NAME,
+            'nameKind' => 'action group name',
         ],
     ];
 

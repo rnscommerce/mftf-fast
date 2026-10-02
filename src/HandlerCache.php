@@ -203,7 +203,11 @@ final class HandlerCache
 
                 $blob = ['sig' => $this->signature($type), 'state' => $state];
                 if (Patch::patchable($type)) {
-                    $blob['index'] = ($this->patches[$type] ?? $this->patchFor($type, null))->index();
+                    try {
+                        $blob['index'] = ($this->patches[$type] ?? $this->patchFor($type, null))->index();
+                    } catch (Throwable $e) {
+                        // Without an index the snapshot is still good; a later change rebuilds it whole.
+                    }
                 }
                 if (!is_dir($this->dir) && !@mkdir($this->dir, 0775, true) && !is_dir($this->dir)) {
                     continue;
