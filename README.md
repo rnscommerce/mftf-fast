@@ -70,6 +70,18 @@ a change to any of it is a miss and one slow run, never a wrong answer:
 Test XML kept anywhere else, `dev/tests/acceptance/tests/functional` included,
 is not part of the key. After changing a file there, run `cache:clear`.
 
+`describe:test`, `describe:group` and `cache:warm` do not rebuild a stale test
+or action group snapshot: they read again only the tests and action groups the
+changed files declare, merged from every file that declares them, and keep the
+rest. Describing answers before the patched snapshot is checked against the
+schema and saved, so an edit that breaks the schema is described once and
+reported by MFTF on the next run. A generation run still rebuilds a stale
+snapshot whole.
+
+The `Test/Mftf` folders under `vendor` are found once and kept until
+`vendor/composer/installed.json` or a package folder changes; one made by hand
+deeper inside an installed package is not seen until then.
+
 A handler that loaded less than the XML declares is not snapshotted, and the
 line on stderr says which and what was missing. It happens when a run without
 `--force` meets an installation with a module switched off.

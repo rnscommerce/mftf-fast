@@ -105,7 +105,19 @@ if ($sub === 'cache:warm') {
         fwrite(STDERR, sprintf("  no snapshot is kept for: %s\n  kept: %s\n", implode(', ', $unknown), implode(', ', HandlerCache::types())));
         exit(1);
     }
-    $restored = $cache->restore();
+    $restored = $cache->restore(true);
+    $cfg = \Magento\FunctionalTestingFramework\Config\MftfApplicationConfig::class;
+    $cfg::create(HandlerCache::forceInArgv($argv), $cfg::GENERATION_PHASE, false, $cfg::LEVEL_DEFAULT, true);
+    $patch = $cache->patch();
+    if ($patch !== null) {
+        if ($cache->validatePatch()) {
+            $cache->settleOrder();
+            printf("  patched %d name(s) from %d changed file(s)\n", $patch['names'], $patch['changed']);
+        } else {
+            $cache->dropPatched();
+        }
+    }
+    $cache->unpackAll();
     foreach ($cache->warm($types, $restored) as $type => $secs) {
         printf("  built %-14s %6.2fs\n", $type, $secs);
     }
@@ -122,12 +134,43 @@ if ($sub === 'describe:test' || $sub === 'describe:group') {
             : "usage: mftf-fast describe:group [--force] <action group name>\n");
         exit(1);
     }
-    $restored = $cache->restore();
+    // Describing reads no suite.
+    $restored = $cache->restore(true, ['suite']);
     $cfg = \Magento\FunctionalTestingFramework\Config\MftfApplicationConfig::class;
     $cfg::create(HandlerCache::forceInArgv($argv), $cfg::GENERATION_PHASE, false, $cfg::LEVEL_DEFAULT, true);
     // MFTF prints its deprecations to stdout as it parses; only the JSON goes there.
     ob_start();
+    $tp = microtime(true);
+    $patch = $cache->patch();
+    // A patched snapshot is checked against the schema and saved by a child of
+    // its own, before describing resolves anything in it, while this answers.
+    $pid = $patch !== null ? pcntl_fork() : -1;
+    if ($pid === 0) {
+        ob_end_clean();
+        posix_setsid();
+        // The caller waits for these to close; MFTF still prints, and PHP ends a script whose print fails.
+        fclose(STDOUT);
+        $out = fopen('/dev/null', 'w');
+        fclose(STDERR);
+        $err = fopen('/dev/null', 'w');
+        $cache->forgetPatched();
+        if ($cache->validatePatch()) {
+            $cache->settleOrder();
+            $cache->persist($restored);
+        }
+        exit(0);
+    }
+    if ($patch !== null && $pid < 0 && !$cache->validatePatch()) {
+        $cache->dropPatched();
+        $patch = null;
+    }
+    if ($patch !== null) {
+        fwrite(STDERR, sprintf("[mftf-fast] patched %d name(s) from %d changed file(s) in %.2fs\n", $patch['names'], $patch['changed'], microtime(true) - $tp));
+    }
     try {
+        if ($sub === 'describe:test') {
+            $cache->unpackTest($names[0]);
+        }
         $described = $sub === 'describe:test' ? MftfFast\Describe::test($names[0]) : MftfFast\Describe::actionGroup($names[0]);
     } catch (\Throwable $e) {
         // What MFTF printed before it gave up names the fault; the exception only summarises it.
@@ -137,6 +180,9 @@ if ($sub === 'describe:test' || $sub === 'describe:group') {
     }
     ob_end_clean();
     echo json_encode($described, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), "\n";
+    if ($pid > 0) {
+        exit(0);
+    }
     $saved = $cache->persist($restored);
     if ($verbose && ($restored !== [] || $saved !== [])) {
         fwrite(STDERR, sprintf("[mftf-fast] restored %s; snapshotted %s\n", implode('+', $restored) ?: 'nothing', implode('+', $saved) ?: 'nothing'));
