@@ -308,6 +308,12 @@ final class HandlerCache
         }
     }
 
+    /** @return list<string> the types a patch touched */
+    public function patched(): array
+    {
+        return array_keys($this->patches);
+    }
+
     /** Drops the snapshot of every type a patch touched, so the next run reads them whole. */
     public function forgetPatched(): void
     {

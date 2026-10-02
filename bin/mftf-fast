@@ -180,10 +180,8 @@ if ($sub === 'describe:test' || $sub === 'describe:group') {
     }
     ob_end_clean();
     echo json_encode($described, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), "\n";
-    if ($pid > 0) {
-        exit(0);
-    }
-    $saved = $cache->persist($restored);
+    // A forked child saves what was patched; whatever else describing built is this one's to save.
+    $saved = $cache->persist($pid > 0 ? array_merge($restored, $cache->patched()) : $restored);
     if ($verbose && ($restored !== [] || $saved !== [])) {
         fwrite(STDERR, sprintf("[mftf-fast] restored %s; snapshotted %s\n", implode('+', $restored) ?: 'nothing', implode('+', $saved) ?: 'nothing'));
     }
