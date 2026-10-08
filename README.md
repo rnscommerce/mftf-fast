@@ -34,7 +34,7 @@ vendor/bin/mftf-fast run:test AdminLoginSuccessfulTest
 ```
 
 Every MFTF command works. The first run parses and snapshots; every run after
-that restores. Three commands are its own:
+that restores. These commands are its own:
 
 | Command | What it does |
 | --- | --- |
@@ -43,6 +43,7 @@ that restores. Three commands are its own:
 | `cache:clear` | remove the snapshots |
 | `describe:test <name>` | the test as MFTF holds it merged, as JSON: every file folded, `extends` resolved, steps in MFTF's order, action groups as calls, each group described alongside with its own steps |
 | `describe:group <name>` | an action group on its own, in the shape `describe:test` gives each group it calls |
+| `describe:operation <entity> <create\|update>` | the body that operation sends for the entity, built by MFTF's own resolver and not sent, as JSON: `body`; `fills`, the entity behind each object of it, by path; and `marks`, by path, what only a run can fill - a `unique` prefix or suffix, a `var` read from the entities a step depends on (its value `null`), and an `env` or `credential` reference, left as written and never decrypted. What MFTF cannot build is its own one line on stderr |
 
 `--force` makes MFTF merge every module, enabled or not, so a run with it and
 a run without it parse two different corpora and keep a snapshot each.
