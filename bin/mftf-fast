@@ -12,7 +12,8 @@ declare(strict_types=1);
  * cached between runs. Snapshotting those graphs takes single-test generation
  * from roughly 25s to 7s.
  *
- * Extra subcommands: cache:status, cache:clear, cache:warm, describe:test, describe:group
+ * Extra subcommands: cache:status, cache:clear, cache:warm, describe:test, describe:group,
+ * describe:operation
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -125,17 +126,21 @@ if ($sub === 'cache:warm') {
     exit(0);
 }
 
-if ($sub === 'describe:test' || $sub === 'describe:group') {
+if ($sub === 'describe:test' || $sub === 'describe:group' || $sub === 'describe:operation') {
     // describe:test|describe:group [--force] <name>: the test or action group as MFTF holds it merged, as JSON.
+    // describe:operation [--force] <entity> <create|update>: the body that operation builds from the entity, as JSON.
     $names = array_values(array_filter(array_slice($argv, 2), static fn ($arg) => $arg !== '' && $arg[0] !== '-'));
-    if (count($names) !== 1) {
-        fwrite(STDERR, $sub === 'describe:test'
-            ? "usage: mftf-fast describe:test [--force] <test name>\n"
-            : "usage: mftf-fast describe:group [--force] <action group name>\n");
+    $usage = [
+        'describe:test' => [1, "usage: mftf-fast describe:test [--force] <test name>\n"],
+        'describe:group' => [1, "usage: mftf-fast describe:group [--force] <action group name>\n"],
+        'describe:operation' => [2, "usage: mftf-fast describe:operation [--force] <entity name> <create|update>\n"],
+    ][$sub];
+    if (count($names) !== $usage[0] || ($sub === 'describe:operation' && !in_array($names[1], ['create', 'update'], true))) {
+        fwrite(STDERR, $usage[1]);
         exit(1);
     }
-    // Describing reads no suite.
-    $restored = $cache->restore(true, ['suite']);
+    // Describing reads no suite, and an operation reads only data.
+    $restored = $cache->restore(true, $sub === 'describe:operation' ? ['suite', 'test', 'actiongroup', 'section', 'page'] : ['suite']);
     $cfg = \Magento\FunctionalTestingFramework\Config\MftfApplicationConfig::class;
     $cfg::create(HandlerCache::forceInArgv($argv), $cfg::GENERATION_PHASE, false, $cfg::LEVEL_DEFAULT, true);
     // MFTF prints its deprecations to stdout as it parses; only the JSON goes there.
@@ -171,7 +176,11 @@ if ($sub === 'describe:test' || $sub === 'describe:group') {
         if ($sub === 'describe:test') {
             $cache->unpackTest($names[0]);
         }
-        $described = $sub === 'describe:test' ? MftfFast\Describe::test($names[0]) : MftfFast\Describe::actionGroup($names[0]);
+        $described = match ($sub) {
+            'describe:test' => MftfFast\Describe::test($names[0]),
+            'describe:group' => MftfFast\Describe::actionGroup($names[0]),
+            'describe:operation' => MftfFast\Operation::describe($names[0], $names[1]),
+        };
     } catch (\Throwable $e) {
         // What MFTF printed before it gave up names the fault; the exception only summarises it.
         fwrite(STDERR, ob_get_clean());
