@@ -116,11 +116,14 @@ final class Describe
     /**
      * A copy of the step that ordering leaves as written: MFTF resolves each
      * step's references as it sorts them, and a group's own steps still name
-     * its arguments, which resolve only once a call supplies them.
+     * its arguments, which resolve only once a call supplies them. An
+     * assertion's nested sides are flattened here, since MFTF does that only
+     * as part of the resolving this skips.
      */
     private function unresolved(ActionObject $action): ActionObject
     {
         $copy = clone $action;
+        $copy->trimAssertionAttributes();
         $resolved = new \ReflectionProperty(ActionObject::class, 'resolvedCustomAttributes');
         $resolved->setValue($copy, ['unresolved' => true]);
         return $copy;
