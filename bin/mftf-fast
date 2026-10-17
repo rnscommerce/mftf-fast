@@ -13,7 +13,7 @@ declare(strict_types=1);
  * from roughly 25s to 7s.
  *
  * Extra subcommands: cache:status, cache:clear, cache:warm, describe:test, describe:group,
- * describe:operation
+ * describe:operation, operate
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -123,6 +123,15 @@ if ($sub === 'cache:warm') {
         printf("  built %-14s %6.2fs\n", $type, $secs);
     }
     printf("  snapshotted: %s\n", implode(', ', $cache->persist($restored)) ?: 'nothing');
+    exit(0);
+}
+
+if ($sub === 'operate') {
+    // operate [--force]: one JSON request per line on stdin, one JSON answer per line on stdout.
+    $cache->restore(true, ['suite', 'test', 'actiongroup', 'section', 'page']);
+    $cfg = \Magento\FunctionalTestingFramework\Config\MftfApplicationConfig::class;
+    $cfg::create(HandlerCache::forceInArgv($argv), $cfg::EXECUTION_PHASE, false, $cfg::LEVEL_DEFAULT, true);
+    (new MftfFast\Operate())->serve(STDIN, STDOUT);
     exit(0);
 }
 
