@@ -27,8 +27,9 @@ final class Operate
         class_exists(MagentoSequence::class);
         // CurlHandler attaches the exchange to the Allure step it thinks is running; outside a test there is none.
         \Qameta\Allure\Allure::getLifecycleConfigurator()->setOutputDirectory(sys_get_temp_dir() . '/mftf-fast-operate');
-        while (($line = fgets($in)) !== false) {
-            $line = trim($line);
+        // A parent's stdin is often a socket, where fgets gives up after default_socket_timeout; only the end of it stops this.
+        while (!feof($in)) {
+            $line = trim((string) fgets($in));
             if ($line === '') {
                 continue;
             }
