@@ -8,6 +8,7 @@ use Magento\FunctionalTestingFramework\DataGenerator\Handlers\OperationDefinitio
 use Magento\FunctionalTestingFramework\DataGenerator\Objects\EntityDataObject;
 use Magento\FunctionalTestingFramework\DataGenerator\Persist\CurlHandler;
 use Magento\FunctionalTestingFramework\DataGenerator\Persist\DataPersistenceHandler;
+use Magento\FunctionalTestingFramework\Exceptions\TestFrameworkException;
 use Magento\FunctionalTestingFramework\Module\MagentoSequence;
 
 /**
@@ -19,6 +20,9 @@ use Magento\FunctionalTestingFramework\Module\MagentoSequence;
  */
 final class Operate
 {
+    /** What MFTF's form executors put before the page when a successRegex does not match it. */
+    private const NOT_CREATED = 'Entity creation was not successful! Response: ';
+
     /** @var array<string, array{handler: DataPersistenceHandler, entity: string, type: string}> */
     private array $staged = [];
 
@@ -36,6 +40,8 @@ final class Operate
             ob_start();
             try {
                 $answer = ['ok' => true] + $this->handle(json_decode($line, true, 512, JSON_THROW_ON_ERROR));
+            } catch (NotCreated $e) {
+                $answer = ['ok' => false, 'error' => $e->getMessage(), 'class' => $e::class, 'exchange' => $e->exchange];
             } catch (\Throwable $e) {
                 $answer = ['ok' => false, 'error' => $e->getMessage(), 'class' => $e::class];
             }
@@ -117,7 +123,23 @@ final class Operate
         $method = $definition->getApiMethod() ?? ['create' => 'POST', 'delete' => 'DELETE', 'update' => 'PUT', 'get' => 'GET'][$operation];
 
         $started = microtime(true);
-        $response = $curl->executeRequest($dependents);
+        try {
+            $response = $curl->executeRequest($dependents);
+        } catch (TestFrameworkException $e) {
+            // A form post whose successRegex missed: MFTF says so only in this message, with the page after it.
+            if (!str_starts_with($e->getMessage(), self::NOT_CREATED)) {
+                throw $e;
+            }
+            throw new NotCreated('Entity creation was not successful!', [
+                'operation' => $operation,
+                'auth' => $definition->getAuth(),
+                'method' => $method,
+                'url' => $url,
+                'request' => $curl->getRequestDataArray(),
+                'page' => substr($e->getMessage(), strlen(self::NOT_CREATED)),
+                'ms' => (int) round((microtime(true) - $started) * 1000),
+            ]);
+        }
         $took = microtime(true) - $started;
 
         if ($handler !== null) {
