@@ -93,7 +93,7 @@ final class Operate
         $staged = $this->staged($key);
         $update = $this->entity($entityName);
         $handler = $staged['handler'];
-        $dependents = array_merge($this->createdOf($requires), [$handler->getCreatedObject()]);
+        $dependents = array_merge($this->dependentsOf($handler), $this->createdOf($requires), [$handler->getCreatedObject()]);
         $exchange = $this->send('update', $update, $handler, $dependents);
         return ['key' => $key] + $exchange + ['created' => $handler->getCreatedObject()->getAllData()];
     }
@@ -102,7 +102,7 @@ final class Operate
     {
         $staged = $this->staged($key);
         $created = $staged['handler']->getCreatedObject();
-        $exchange = $this->send('delete', $created, null, []);
+        $exchange = $this->send('delete', $created, null, $this->dependentsOf($staged['handler']));
         unset($this->staged[$key]);
         return ['key' => $key] + $exchange;
     }
@@ -169,6 +169,17 @@ final class Operate
     private function staged(string $key): array
     {
         return $this->staged[$key] ?? throw new \RuntimeException("Nothing staged is named {$key}.");
+    }
+
+    /**
+     * What an entry was created with, which MFTF's updateData and deleteData
+     * fill a URL and a body from as well as the entry itself.
+     *
+     * @return EntityDataObject[]
+     */
+    private function dependentsOf(DataPersistenceHandler $handler): array
+    {
+        return (new \ReflectionProperty(DataPersistenceHandler::class, 'dependentObjects'))->getValue($handler) ?? [];
     }
 
     /** @return DataPersistenceHandler[] */
