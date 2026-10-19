@@ -62,16 +62,31 @@ final class Operation
         $resolver = new class($dependents) extends OperationDataArrayResolver {
             public const FILLED_BY = "\u{E001}entity";
 
+            /** @var EntityDataObject[] The entities being resolved, outermost first. */
+            public array $resolving = [];
+
             public function resolveOperationDataArray($entityObject, $operationMetadata, $operation, $fromArray = false)
             {
+                $this->resolving[] = $entityObject;
                 $resolved = parent::resolveOperationDataArray($entityObject, $operationMetadata, $operation, $fromArray);
+                array_pop($this->resolving);
                 if (is_array($resolved)) {
                     $resolved[self::FILLED_BY] = $entityObject->getName();
                 }
                 return $resolved;
             }
         };
-        $resolved = $resolver->resolveOperationDataArray($entity, $definition->getOperationMetadata(), $definition->getOperation(), false);
+        try {
+            $resolved = $resolver->resolveOperationDataArray($entity, $definition->getOperationMetadata(), $definition->getOperation(), false);
+        } catch (\Error $error) {
+            // MFTF asks a linked entity's type for the same operation and calls
+            // into what it gets, null where the type has none.
+            $missing = $this->typeWithout(end($resolver->resolving), $operation);
+            if ($missing === null) {
+                throw $error;
+            }
+            throw new \RuntimeException("{$missing} has no {$operation} operation.");
+        }
 
         return [
             'entity' => $entity->getName(),
@@ -81,6 +96,17 @@ final class Operation
             'fills' => $this->fills,
             'marks' => $this->marks,
         ];
+    }
+
+    /** The first type among those the entity links that has no such operation. */
+    private function typeWithout(EntityDataObject $entity, string $operation): ?string
+    {
+        foreach ($entity->getLinkedEntities() as $type) {
+            if (OperationDefinitionObjectHandler::getInstance()->getOperationDefinition($operation, $type) === null) {
+                return $type;
+            }
+        }
+        return null;
     }
 
     /**
