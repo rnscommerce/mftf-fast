@@ -206,6 +206,74 @@ if ($sub === 'describe:test' || $sub === 'describe:group' || $sub === 'describe:
     exit(0);
 }
 
+if ($sub === 'run:scratch') {
+    // run:scratch [--force] <file.xml>... [-- <codeception option>...]: tests that exist for this run only.
+    $args = array_slice($argv, 2);
+    $split = array_search('--', $args, true);
+    $options = $split === false ? [] : array_slice($args, $split + 1);
+    $files = array_values(array_filter(
+        $split === false ? $args : array_slice($args, 0, $split),
+        static fn ($arg) => $arg !== '' && $arg[0] !== '-'
+    ));
+    if ($files === []) {
+        fwrite(STDERR, "usage: mftf-fast run:scratch [--force] <file.xml>... [-- <codeception option>...]\n");
+        exit(1);
+    }
+    // Generating one test reads no suite.
+    $restored = $cache->restore(true, ['suite']);
+    $patch = $cache->patch();
+    if ($patch !== null) {
+        if ($cache->validatePatch()) {
+            $cache->settleOrder();
+        } else {
+            $cache->dropPatched();
+        }
+    }
+    // The project is built and saved before anything of the scratch joins it,
+    // so no snapshot ever holds a test that is not in the project.
+    $cache->warm(['actiongroup', 'section', 'page', 'data', 'test'], $restored);
+    $cache->persist($restored);
+
+    $dir = null;
+    $cleanUp = static function () use (&$dir): void {
+        if ($dir !== null) {
+            MftfFast\Scratch::remove($dir);
+        }
+    };
+    if (function_exists('pcntl_async_signals')) {
+        pcntl_async_signals(true);
+        foreach ([SIGINT, SIGTERM, SIGHUP] as $signal) {
+            pcntl_signal($signal, static function (int $signal) use ($cleanUp): void {
+                $cleanUp();
+                exit(128 + $signal);
+            });
+        }
+    }
+    ob_start();
+    try {
+        $names = MftfFast\Scratch::load($files);
+        if ($names === []) {
+            throw new \RuntimeException('None of the files declares a test');
+        }
+        foreach ($names as $name) {
+            $cache->unpackTest($name);
+        }
+        $dir = MftfFast\Scratch::generate($names);
+    } catch (\Throwable $e) {
+        fwrite(STDERR, ob_get_clean());
+        fwrite(STDERR, 'Error: ' . $e->getMessage() . "\n");
+        $cleanUp();
+        exit(1);
+    }
+    ob_end_clean();
+    try {
+        $code = MftfFast\Scratch::run($dir, $names, $options);
+    } finally {
+        $cleanUp();
+    }
+    exit($code);
+}
+
 $t0 = microtime(true);
 $restored = $cache->restore();
 $restoreTime = microtime(true) - $t0;
