@@ -352,7 +352,7 @@ final class HandlerCache
             $state['tests'] = [];
             return $state;
         }
-        $state['tests'] = array_map(static fn (string $packed) => igbinary_unserialize($packed), $state['tests']);
+        $state['tests'] = array_map(static fn (string $packed) => self::unpackOne($packed), $state['tests']);
         return $state;
     }
 
@@ -360,11 +360,11 @@ final class HandlerCache
     private function packTests(array $live): array
     {
         if ($this->packedTests === null) {
-            return array_map(static fn ($test) => igbinary_serialize($test), $live);
+            return array_map(static fn ($test) => self::packOne($test), $live);
         }
         $packed = [];
         foreach ($this->packedTests as $name => $kept) {
-            $packed[$name] = $kept ?? igbinary_serialize($live[$name]);
+            $packed[$name] = $kept ?? self::packOne($live[$name]);
         }
         return $packed;
     }
@@ -380,7 +380,7 @@ final class HandlerCache
         \Closure::bind(function () use ($packed) {
             $all = [];
             foreach ($packed as $name => $raw) {
-                $all[$name] = $this->tests[$name] ?? igbinary_unserialize($raw);
+                $all[$name] = $this->tests[$name] ?? HandlerCache::unpackOne($raw);
             }
             $this->tests = $all;
         }, $class::getInstance(), $class)();
@@ -396,7 +396,7 @@ final class HandlerCache
         while ($name !== null && !isset($seen[$name])) {
             $seen[$name] = true;
             if (!isset($live[$name]) && isset($this->packedTests[$name])) {
-                $live[$name] = igbinary_unserialize($this->packedTests[$name]);
+                $live[$name] = self::unpackOne($this->packedTests[$name]);
             }
             $name = isset($live[$name]) ? $live[$name]->getParentName() : null;
         }
@@ -414,6 +414,20 @@ final class HandlerCache
         return function_exists('igbinary_serialize')
             ? "\x00ig" . igbinary_serialize($blob)
             : serialize($blob);
+    }
+
+    /** One test, encoded as encode() would: igbinary where the extension is loaded. */
+    private static function packOne(mixed $test): string
+    {
+        return function_exists('igbinary_serialize') ? igbinary_serialize($test) : serialize($test);
+    }
+
+    /** igbinary output starts with a NUL byte, which serialize's never does. */
+    public static function unpackOne(string $packed): mixed
+    {
+        return str_starts_with($packed, "\x00")
+            ? igbinary_unserialize($packed)
+            : unserialize($packed, ['allowed_classes' => true]);
     }
 
     /** @return mixed the decoded blob, whichever encoder wrote it */
