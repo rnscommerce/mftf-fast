@@ -48,7 +48,9 @@ that restores. These commands are its own:
 | `run:scratch <file.xml>... [-- <codeception option>...]` | generates and runs the tests the files declare, then removes what it generated: nothing is written into the project and no snapshot ever holds them. Files hold `<tests>` or `<entities>`, and win over a project object of the same name. A scratch entity is for its values only - `createData` looks an entity up as the test runs, so it creates only what the project declares. Codeception runs with `--verbose --steps` and the options after `--`; with `-c`, from that config's folder. Exits with Codeception's code |
 
 `--force` makes MFTF merge every module, enabled or not, so a run with it and
-a run without it parse two different corpora and keep a snapshot each.
+a run without it parse two different corpora and keep a snapshot each. So
+does each PHP version that reads the project: `test.php8.3.35.snapshot` and
+`test.force.php8.3.35.snapshot` sit beside those of another PHP.
 `cache:status --force` describes the ones `generate:tests --force` restores,
 `cache:status` the others, and `cache:clear` removes both.
 
