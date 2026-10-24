@@ -60,7 +60,7 @@ final class Operate
     {
         return match ($request['do'] ?? null) {
             'create' => $this->create($request['entity'], $request['requires'] ?? [], $request['fields'] ?? []),
-            'get' => $this->get($request['entity'], $request['requires'] ?? []),
+            'get' => $this->get($request['entity'] ?? null, $request['requires'] ?? [], $request['type'] ?? null),
             'update' => $this->update($request['key'], $request['entity'], $request['requires'] ?? []),
             'delete' => $this->delete($request['key']),
             'staged' => ['staged' => array_map(
@@ -85,9 +85,17 @@ final class Operate
         return ['key' => $key, 'type' => $entity->getType()] + $exchange + ['created' => $handler->getCreatedObject()->getAllData()];
     }
 
-    private function get(string $entityName, array $requires): array
+    /**
+     * With a type and no entity, an entity of that type with nothing of its
+     * own, so the URL is filled from the staged entries alone: a GET has no body.
+     */
+    private function get(?string $entityName, array $requires, ?string $type): array
     {
-        $entity = $this->entity($entityName);
+        $entity = match (true) {
+            $entityName !== null => $this->entity($entityName),
+            $type !== null => new EntityDataObject($type, $type, [], [], null),
+            default => throw new \InvalidArgumentException('get takes an entity or a type'),
+        };
         $handler = new DataPersistenceHandler($entity, $this->handlers($requires));
         $exchange = $this->send('get', $entity, $handler, $this->createdOf($requires));
         return ['type' => $entity->getType()] + $exchange + ['created' => $handler->getCreatedObject()->getAllData()];
