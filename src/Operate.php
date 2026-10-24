@@ -23,6 +23,9 @@ final class Operate
     /** What MFTF's form executors put before the page when a successRegex does not match it. */
     private const NOT_CREATED = 'Entity creation was not successful! Response: ';
 
+    /** How CurlTransport says the instance answered with a status it does not count as success. */
+    private const HTTP_ERROR = '/^Error HTTP response code: (\d+)\s*Response:(.*)$/s';
+
     /** @var array<string, array{handler: DataPersistenceHandler, entity: string, type: string}> */
     private array $staged = [];
 
@@ -40,7 +43,7 @@ final class Operate
             ob_start();
             try {
                 $answer = ['ok' => true] + $this->handle(json_decode($line, true, 512, JSON_THROW_ON_ERROR));
-            } catch (NotCreated $e) {
+            } catch (Refused $e) {
                 $answer = ['ok' => false, 'error' => $e->getMessage(), 'class' => $e::class, 'exchange' => $e->exchange];
             } catch (\Throwable $e) {
                 $answer = ['ok' => false, 'error' => $e->getMessage(), 'class' => $e::class];
@@ -128,19 +131,28 @@ final class Operate
         try {
             $response = $curl->executeRequest($dependents);
         } catch (TestFrameworkException $e) {
-            // A form post whose successRegex missed: MFTF says so only in this message, with the page after it.
-            if (!str_starts_with($e->getMessage(), self::NOT_CREATED)) {
-                throw $e;
-            }
-            throw new NotCreated('Entity creation was not successful!', [
+            $sent = [
                 'operation' => $operation,
                 'auth' => $definition->getAuth(),
                 'method' => $method,
                 'url' => $url,
                 'request' => $curl->getRequestDataArray(),
-                'page' => substr($e->getMessage(), strlen(self::NOT_CREATED)),
                 'ms' => (int) round((microtime(true) - $started) * 1000),
-            ]);
+            ];
+            // A form post whose successRegex missed: MFTF says so only in this message, with the page after it.
+            if (str_starts_with($e->getMessage(), self::NOT_CREATED)) {
+                throw new Refused('Entity creation was not successful!', $sent + [
+                    'page' => substr($e->getMessage(), strlen(self::NOT_CREATED)),
+                ]);
+            }
+            // The instance answered with an error status: MFTF says so only in this message, with the body after it.
+            if (preg_match(self::HTTP_ERROR, $e->getMessage(), $answered) === 1) {
+                throw new Refused("Error HTTP response code: {$answered[1]}", $sent + [
+                    'status' => (int) $answered[1],
+                    'response' => json_decode($answered[2], true) ?? $answered[2],
+                ]);
+            }
+            throw $e;
         }
         $took = microtime(true) - $started;
 
