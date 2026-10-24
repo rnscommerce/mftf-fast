@@ -56,7 +56,7 @@ final class Operate
     private function handle(array $request): array
     {
         return match ($request['do'] ?? null) {
-            'create' => $this->create($request['entity'], $request['requires'] ?? []),
+            'create' => $this->create($request['entity'], $request['requires'] ?? [], $request['fields'] ?? []),
             'get' => $this->get($request['entity'], $request['requires'] ?? []),
             'update' => $this->update($request['key'], $request['entity'], $request['requires'] ?? []),
             'delete' => $this->delete($request['key']),
@@ -68,13 +68,15 @@ final class Operate
         };
     }
 
-    private function create(string $entityName, array $requires): array
+    /** @param array<array{key: string, value: string, unique?: 'prefix'|'suffix'}> $fields */
+    private function create(string $entityName, array $requires, array $fields): array
     {
         $entity = $this->entity($entityName);
         // msq() answers the same suffix for a name for the life of the process; a test gets a fresh one per test.
         unset(MagentoSequence::$hash[$entityName]);
-        $handler = new DataPersistenceHandler($entity, $this->handlers($requires));
-        $exchange = $this->send('create', $entity, $handler, $this->createdOf($requires));
+        $handler = new DataPersistenceHandler($entity, $this->handlers($requires), $this->customFields($fields));
+        $merged = (new \ReflectionProperty(DataPersistenceHandler::class, 'entityObject'))->getValue($handler);
+        $exchange = $this->send('create', $merged, $handler, $this->createdOf($requires));
         $key = $this->keyFor($entityName);
         $this->staged[$key] = ['handler' => $handler, 'entity' => $entityName, 'type' => $entity->getType()];
         return ['key' => $key, 'type' => $entity->getType()] + $exchange + ['created' => $handler->getCreatedObject()->getAllData()];
@@ -155,6 +157,29 @@ final class Operate
             'response' => json_decode((string) $response, true) ?? $response,
             'ms' => (int) round($took * 1000),
         ];
+    }
+
+    /**
+     * A createData's <field> overrides, each made unique as the generator
+     * makes one with a unique attribute. Keys are lowercased, as MFTF stores
+     * an entity's own and looks them up, so a mixed-case key still overrides.
+     *
+     * @param array<array{key: string, value: string, unique?: 'prefix'|'suffix'}> $fields
+     * @return array<string, string>
+     */
+    private function customFields(array $fields): array
+    {
+        $custom = [];
+        foreach ($fields as $field) {
+            $value = (string) $field['value'];
+            $custom[strtolower($field['key'])] = match ($field['unique'] ?? null) {
+                'prefix' => uniqid() . $value,
+                'suffix' => $value . uniqid(),
+                null => $value,
+                default => throw new \InvalidArgumentException('unique is prefix or suffix'),
+            };
+        }
+        return $custom;
     }
 
     private function entity(string $name): EntityDataObject
