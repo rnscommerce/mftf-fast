@@ -266,6 +266,15 @@ if ($sub === 'run:scratch') {
         exit(1);
     }
     ob_end_clean();
+    if (in_array('--generate-only', $split === false ? $args : array_slice($args, 0, $split), true)) {
+        $generated = [];
+        foreach ($names as $name) {
+            $generated[$name] = (string) file_get_contents($dir . DIRECTORY_SEPARATOR . $name . 'Cest.php');
+        }
+        $cleanUp();
+        echo json_encode($generated, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), "\n";
+        exit(0);
+    }
     try {
         $code = MftfFast\Scratch::run($dir, $names, $options);
     } finally {
