@@ -604,17 +604,18 @@ final class HandlerCache
     }
 
     /**
-     * Where a type's snapshot lives, one file per mode and per PHP.
+     * Where a type's snapshot lives, one file per mode, per PHP and per MFTF.
      *
      * Force and non-force merge different corpora, and the stamp holds the
-     * PHP version, so neither can share a file: keyed only by the stamp they
-     * would each invalidate the other on every alternation and re-parse the
-     * whole corpus, which is the cost this class exists to avoid. Side by
-     * side, all of them stay warm.
+     * PHP and framework versions, so none of them can share a file: keyed
+     * only by the stamp they would each invalidate the other on every
+     * alternation and re-parse the whole corpus, which is the cost this class
+     * exists to avoid. Side by side, all of them stay warm.
      */
     private function file(string $type): string
     {
-        return $this->dir . '/' . $type . ($this->force ? '.force' : '') . '.php' . PHP_VERSION . '.snapshot';
+        return $this->dir . '/' . $type . ($this->force ? '.force' : '') . '.php' . PHP_VERSION
+            . '.mftf' . $this->frameworkVersion() . '.snapshot';
     }
 
     /** Every snapshot on disk, both modes - for clear(), which means all of it. */
