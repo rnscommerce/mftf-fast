@@ -91,6 +91,6 @@ final class SnapshotAfterFailureTest extends TestCase
 
     private function snapshot(): string
     {
-        return $this->root . '/var/mftf-cache/test.php' . PHP_VERSION . '.snapshot';
+        return glob($this->root . '/var/mftf-cache/test.php' . PHP_VERSION . '.mftf*.snapshot')[0] ?? $this->root . '/var/mftf-cache/test.php' . PHP_VERSION . '.mftf.snapshot';
     }
 }
