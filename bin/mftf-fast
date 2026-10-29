@@ -75,6 +75,14 @@ if (!class_exists(\Magento\FunctionalTestingFramework\Console\CommandList::class
     exit(1);
 }
 
+// MFTF checks every XML file against its schema and stops on the first that
+// fails; Studio reads and generates whatever MFTF can make sense of.
+if (class_exists(\Magento\FunctionalTestingFramework\ObjectManagerFactory::class)) {
+    \Magento\FunctionalTestingFramework\ObjectManagerFactory::getObjectManager()->configure([
+        \Magento\FunctionalTestingFramework\Config\ValidationState::class => ['arguments' => ['appMode' => 'default']],
+    ]);
+}
+
 $cache = new HandlerCache($root, HandlerCache::forceInArgv($argv));
 $verbose = getenv('MFTF_FAST_QUIET') !== '1';
 $sub = $argv[1] ?? '';
