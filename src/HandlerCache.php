@@ -25,6 +25,14 @@ final class HandlerCache
     private const FORMAT = 5;
 
     /**
+     * Windows has no GNU find or grep, so there the files are walked in PHP.
+     * Elsewhere find stays: it stamps a file's time to a fraction of a second,
+     * which PHP cannot, and an edit that keeps a file's size within the same
+     * second would otherwise go unnoticed.
+     */
+    private const WINDOWS = PHP_OS_FAMILY === 'Windows';
+
+    /**
      * Handlers worth caching, mapped to the Test/Mftf subdirectory that feeds them.
      *
      * Test and Suite are here despite being what a developer edits, because
@@ -577,6 +585,12 @@ final class HandlerCache
             return [];
         }
 
+        // Windows has no grep to ask, and leaving the check out there loses
+        // nothing yet: this one finds no name anywhere (rnscommerce/mftf-fast#33).
+        if (self::WINDOWS) {
+            return [];
+        }
+
         $cmd = 'find ' . implode(' ', array_map('escapeshellarg', $roots))
             . ' -path ' . escapeshellarg('*/Test/Mftf/' . $spec['dir'] . '/*')
             . " -name '*.xml' -exec grep -Hho " . escapeshellarg('<' . $spec['declares'] . ' name="[^"]*"')
@@ -648,8 +662,12 @@ final class HandlerCache
         foreach ($roots as $root) {
             array_push($dirs, ...$this->mftfDirs($root));
         }
-        $lines = $dirs === [] ? [] : explode("\n", (string) shell_exec('find ' . implode(' ', array_map('escapeshellarg', $dirs))
-            . " -name '*.xml' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null"));
+        $lines = match (true) {
+            $dirs === [] => [],
+            self::WINDOWS => self::xmlFiles($dirs),
+            default => explode("\n", (string) shell_exec('find ' . implode(' ', array_map('escapeshellarg', $dirs))
+                . " -name '*.xml' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null")),
+        };
 
         foreach ($lines as $line) {
             if ($line === '') {
@@ -664,9 +682,11 @@ final class HandlerCache
             }
         }
         foreach ($this->testOnlyModuleRoots() as [$dir, $depth]) {
-            $cmd = 'find ' . escapeshellarg($dir)
-                . " -name '*.xml' -not -path '*/.*' -not -path '*/_generated/*' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null";
-            foreach (explode("\n", (string)shell_exec($cmd)) as $line) {
+            $listed = self::WINDOWS
+                ? self::xmlFiles([$dir], static fn (string $name): bool => $name[0] === '.' || $name === '_generated')
+                : explode("\n", (string) shell_exec('find ' . escapeshellarg($dir)
+                    . " -name '*.xml' -not -path '*/.*' -not -path '*/_generated/*' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null"));
+            foreach ($listed as $line) {
                 $path = (string)strstr($line, "\t", true);
                 $folder = explode('/', substr($path, strlen($dir) + 1))[$depth] ?? null;
                 foreach (self::TYPES as $type => $spec) {
@@ -719,8 +739,8 @@ final class HandlerCache
      */
     private function mftfDirs(string $root): array
     {
-        $walk = static fn () => array_values(array_filter(explode("\n", (string) shell_exec('find ' . escapeshellarg($root)
-            . " -type d -path '*/Test/Mftf' -prune -print 2>/dev/null"))));
+        $walk = static fn () => self::WINDOWS ? self::mftfDirsUnder($root) : array_values(array_filter(explode("\n",
+            (string) shell_exec('find ' . escapeshellarg($root) . " -type d -path '*/Test/Mftf' -prune -print 2>/dev/null"))));
         if (basename($root) !== 'vendor') {
             return $walk();
         }
@@ -739,6 +759,59 @@ final class HandlerCache
             @file_put_contents($file, json_encode(['key' => $key, 'dirs' => $dirs]));
         }
         return $dirs;
+    }
+
+    /**
+     * Every folder under $dir that is a Test/Mftf, not looked inside, as find
+     * -prune lists them. Links are not followed, as find does not follow them.
+     *
+     * @return list<string>
+     */
+    private static function mftfDirsUnder(string $dir): array
+    {
+        $found = [];
+        foreach (scandir($dir) ?: [] as $name) {
+            $path = $dir . '/' . $name;
+            if ($name === '.' || $name === '..' || is_link($path) || !is_dir($path)) {
+                continue;
+            }
+            if ($name === 'Mftf' && basename($dir) === 'Test') {
+                $found[] = $path;
+            } else {
+                array_push($found, ...self::mftfDirsUnder($path));
+            }
+        }
+        return $found;
+    }
+
+    /**
+     * Every XML file under $dirs as find -printf lists it: path, mtime and size,
+     * tab-separated. Linked folders are not entered, as find does not enter them.
+     *
+     * @param list<string> $dirs
+     * @param (callable(string): bool)|null $skip a file or folder name not to list or enter
+     * @return list<string>
+     */
+    private static function xmlFiles(array $dirs, ?callable $skip = null): array
+    {
+        $lines = [];
+        foreach ($dirs as $dir) {
+            foreach (scandir($dir) ?: [] as $name) {
+                $path = $dir . '/' . $name;
+                if ($name === '.' || $name === '..' || ($skip !== null && $skip($name))) {
+                    continue;
+                }
+                if (is_dir($path)) {
+                    if (is_link($path)) {
+                        continue;
+                    }
+                    array_push($lines, ...self::xmlFiles([$path], $skip));
+                } elseif (str_ends_with($name, '.xml')) {
+                    $lines[] = $path . "\t" . filemtime($path) . "\t" . filesize($path);
+                }
+            }
+        }
+        return $lines;
     }
 
     /**
