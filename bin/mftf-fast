@@ -60,13 +60,12 @@ try {
 
 // Magento, MFTF and Symfony Console all come from the project under test, not
 // from here. Loaded after discovery because discovery is what says where the
-// project is; harmless when a composer autoloader already brought them.
+// project is; harmless when a composer autoloader already brought them. A
+// project with no vendor tree has them from whatever ran this - MFTF Studio
+// prepends its own loader and framework - and the check below says when
+// nothing did.
 $projectAutoload = $root . '/vendor/autoload.php';
-if ($composer === null) {
-    if (!is_file($projectAutoload)) {
-        fwrite(STDERR, "No vendor/autoload.php in {$root}.\n");
-        exit(1);
-    }
+if ($composer === null && is_file($projectAutoload)) {
     require_once $projectAutoload;
 }
 
