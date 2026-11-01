@@ -76,8 +76,7 @@ final class ProjectPaths
      */
     public static function looksLikeWorkspace(string $dir): bool
     {
-        return is_dir($dir . '/dev/tests/acceptance')
-            && is_dir($dir . '/vendor');
+        return is_dir($dir . '/dev/tests/acceptance');
     }
 
     /** True for a real Magento installation rather than a trimmed workspace. */
