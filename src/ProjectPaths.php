@@ -25,8 +25,10 @@ final class ProjectPaths
      * concerned, which is why the check is that shape and not bin/magento -
      * a trimmed workspace has no Magento binary and never will.
      *
-     * MFTF_UI_WORKSPACE overrides; MFTF_UI_MAGENTO_ROOT is the older name for
-     * the same thing and still works.
+     * MFTF_UI_WORKSPACE overrides, and is taken as any folder: whoever names
+     * it has already defined where MFTF reads its settings and tests, so it
+     * need not have the acceptance directory. MFTF_UI_MAGENTO_ROOT is the
+     * older name for the same thing and still works.
      *
      * @throws \RuntimeException when no workspace can be found
      */
@@ -37,8 +39,8 @@ final class ProjectPaths
             if (!is_string($override) || $override === '') {
                 continue;
             }
-            if (!self::looksLikeWorkspace($override)) {
-                throw new \RuntimeException("{$var} is not an MFTF workspace: {$override}");
+            if (!is_dir($override)) {
+                throw new \RuntimeException("{$var} is not a folder: {$override}");
             }
             return new self(rtrim($override, '/'));
         }
