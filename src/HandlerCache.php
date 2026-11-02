@@ -612,9 +612,9 @@ final class HandlerCache
         return array_keys($names);
     }
 
-    private function moduleState(): ModuleState
+    public function moduleState(): ModuleState
     {
-        return $this->modules ??= new ModuleState($this->root);
+        return $this->modules ??= new ModuleState($this->magentoRoot());
     }
 
     /**

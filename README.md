@@ -68,9 +68,14 @@ a change to any of it is a miss and one slow run, never a wrong answer:
 
 - the path, size and modification time of every XML file under a `Test/Mftf`
   folder in `vendor` and `app/code`
-- the modules enabled in `app/etc/config.php`
+- the modules enabled in `app/etc/config.php`, in `MAGENTO_BP` where it is set
 - whether the run had `--force`
 - the MFTF version, the PHP version and `MAGENTO_BP`
+
+That file is also where MFTF's list of enabled modules comes from: MFTF would
+ask the running instance, through an admin token that needs a one-time password
+where the instance has two-factor authentication on. Only where there is no
+`app/etc/config.php` does MFTF ask the instance itself.
 
 Test XML kept anywhere else, `dev/tests/acceptance/tests/functional` included,
 is not part of the key. After changing a file there, run `cache:clear`.
