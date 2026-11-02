@@ -652,11 +652,9 @@ final class HandlerCache
 
     private function scan(): array
     {
-        $roots = array_filter([$this->root . '/vendor', $this->root . '/app/code'], 'is_dir');
+        $magento = $this->magentoRoot();
+        $roots = array_filter([$magento . '/vendor', $magento . '/app/code'], 'is_dir');
         $buckets = array_fill_keys(array_keys(self::TYPES), []);
-        if ($roots === []) {
-            return array_map(static fn($b) => 'empty', $buckets);
-        }
 
         $dirs = [];
         foreach ($roots as $root) {
@@ -727,6 +725,16 @@ final class HandlerCache
             $out[$type] = md5($stamp . '|' . implode("\n", $lines));
         }
         return $out;
+    }
+
+    /**
+     * Where MFTF reads the instance's modules from: MAGENTO_BP, which a
+     * workspace holding only tests points at an instance elsewhere.
+     */
+    private function magentoRoot(): string
+    {
+        $named = defined('MAGENTO_BP') ? (string) MAGENTO_BP : (string) getenv('MAGENTO_BP');
+        return $named === '' ? $this->root : rtrim($named, '/');
     }
 
     /**
