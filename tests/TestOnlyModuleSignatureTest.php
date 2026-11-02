@@ -50,6 +50,30 @@ final class TestOnlyModuleSignatureTest extends TestCase
         self::assertSame('STALE', $this->testSnapshotValidity($env));
     }
 
+    public function testNewTestInAWorkspaceWithoutVendorMakesTheSnapshotStale(): void
+    {
+        rmdir($this->root . '/vendor');
+        $this->fast('generate:tests');
+        self::assertSame('yes', $this->testSnapshotValidity());
+
+        $this->write('dev/tests/acceptance/tests/functional/Acme/Sandbox/Test/AcmeNewTest.xml');
+
+        self::assertSame('STALE', $this->testSnapshotValidity());
+    }
+
+    public function testNewTestInTheMagentoFolderMakesTheSnapshotStale(): void
+    {
+        rmdir($this->root . '/vendor');
+        $env = 'MAGENTO_BP=' . escapeshellarg($this->root . '/instance');
+        mkdir($this->root . '/instance/vendor', 0775, true);
+        $this->fast('generate:tests', $env);
+        self::assertSame('yes', $this->testSnapshotValidity($env));
+
+        $this->write('instance/vendor/acme/module-sandbox/Test/Mftf/Test/AcmeNewTest.xml');
+
+        self::assertSame('STALE', $this->testSnapshotValidity($env));
+    }
+
     public function testNewTestChangesTheSuiteSignature(): void
     {
         $before = $this->signature('suite');
