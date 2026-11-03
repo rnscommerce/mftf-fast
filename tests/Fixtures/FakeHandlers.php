@@ -42,37 +42,9 @@ if (!class_exists(TestObjectHandler::class, false)) {
     }
 }
 
-namespace Magento\FunctionalTestingFramework\Util;
-
-if (!class_exists(ModuleResolver::class, false)) {
-    /** Same shape as MFTF's: the instance is asked only while nothing has set the list. */
-    final class ModuleResolver
-    {
-        private static ?self $instance = null;
-
-        /** @var list<string>|null */
-        protected $enabledModules = null;
-
-        public static function getInstance(): self
-        {
-            return self::$instance ??= new self();
-        }
-
-        /** @return list<string> */
-        public function getEnabledModules(): array
-        {
-            if (isset($this->enabledModules)) {
-                return $this->enabledModules;
-            }
-            throw new \RuntimeException('Cannot retrieve API token with credentials.');
-        }
-    }
-}
-
 namespace Magento\FunctionalTestingFramework\Console;
 
 use Magento\FunctionalTestingFramework\Test\Handlers\TestObjectHandler;
-use Magento\FunctionalTestingFramework\Util\ModuleResolver;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -102,14 +74,7 @@ if (!class_exists(CommandList::class, false)) {
                     return Command::SUCCESS;
                 }
             };
-            $modules = new class ('modules:enabled') extends Command {
-                protected function execute(InputInterface $input, OutputInterface $output): int
-                {
-                    $output->writeln(implode(',', ModuleResolver::getInstance()->getEnabledModules()));
-                    return Command::SUCCESS;
-                }
-            };
-            return [$generate, $modules];
+            return [$generate];
         }
     }
 }

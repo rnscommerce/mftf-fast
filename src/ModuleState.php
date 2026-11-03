@@ -54,16 +54,6 @@ final class ModuleState
         return md5(implode(',', $on));
     }
 
-    /**
-     * The modules switched on, as the instance would list them.
-     *
-     * @return list<string>
-     */
-    public function enabled(): array
-    {
-        return array_keys(array_filter($this->all()));
-    }
-
     /** @return array<string,bool> */
     public function all(): array
     {
