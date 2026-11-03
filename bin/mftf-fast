@@ -83,17 +83,6 @@ if (class_exists(\Magento\FunctionalTestingFramework\ObjectManagerFactory::class
 }
 
 $cache = new HandlerCache($root, HandlerCache::forceInArgv($argv));
-
-// MFTF asks the running instance which modules are on, through an admin token
-// that takes a one-time password where the instance has two-factor on. The
-// instance answers from app/etc/config.php, so the file is read instead
-// wherever the Magento folder has one.
-$resolver = \Magento\FunctionalTestingFramework\Util\ModuleResolver::class;
-$enabled = $cache->moduleState()->enabled();
-if ($enabled !== [] && class_exists($resolver)) {
-    (new \ReflectionProperty($resolver, 'enabledModules'))->setValue($resolver::getInstance(), $enabled);
-}
-
 $verbose = getenv('MFTF_FAST_QUIET') !== '1';
 $sub = $argv[1] ?? '';
 
