@@ -91,6 +91,9 @@ final class HandlerCache
     private string $stamp = '';
     /** @var array<string, Patch> the types restored stale, to be patched rather than rebuilt */
     private array $patches = [];
+
+    /** @var array<string, true> the types restored stale from a snapshot some run may have resolved into */
+    private array $resolved = [];
     /** Types refused at save because the load they came from was partial. */
     private array $incomplete = [];
     /**
@@ -141,8 +144,11 @@ final class HandlerCache
 
     /**
      * Restore every handler whose snapshot is still valid. Returns the types restored.
+     *
+     * With $cleanOnly a snapshot not saved as clean is left where it is, neither
+     * restored nor patched, for the caller to build again from the files.
      */
-    public function restore(bool $patchable = false, array $skip = []): array
+    public function restore(bool $patchable = false, array $skip = [], bool $cleanOnly = false): array
     {
         $restored = [];
         foreach (self::TYPES as $type => $spec) {
@@ -159,10 +165,17 @@ final class HandlerCache
                 if (!is_array($blob)) {
                     continue;
                 }
+                $clean = ($blob['clean'] ?? false) === true;
+                if ($cleanOnly && !$clean) {
+                    continue;
+                }
                 if (($blob['sig'] ?? null) !== $this->signature($type)) {
                     if ($patchable && Patch::patchable($type) && ($blob['index']['stamp'] ?? null) === $this->stamp) {
                         $this->inject($spec['class'], $type === 'test' ? $this->unpackTests($blob['state'], true) : $blob['state']);
                         $this->patches[$type] = $this->patchFor($type, $blob['index']);
+                        if (!$clean) {
+                            $this->resolved[$type] = true;
+                        }
                     }
                     continue;
                 }
@@ -179,8 +192,12 @@ final class HandlerCache
     /**
      * Snapshot any handler that got built this run and is not already cached.
      * Uninitialised handlers are skipped.
+     *
+     * $clean says nothing has been generated or described from these handlers
+     * since they were read from the files, so the snapshot holds what the files
+     * say and no more. Only such a snapshot is patched or kept by cache:warm.
      */
-    public function persist(array $alreadyRestored = []): array
+    public function persist(array $alreadyRestored = [], bool $clean = false): array
     {
         $saved = [];
         foreach (self::TYPES as $type => $spec) {
@@ -209,7 +226,11 @@ final class HandlerCache
                     continue;
                 }
 
-                $blob = ['sig' => $this->signature($type), 'state' => $state];
+                $blob = [
+                    'sig' => $this->signature($type),
+                    'state' => $state,
+                    'clean' => $clean && !isset($this->resolved[$type]),
+                ];
                 if (Patch::patchable($type)) {
                     try {
                         $blob['index'] = ($this->patches[$type] ?? $this->patchFor($type, null))->index();
