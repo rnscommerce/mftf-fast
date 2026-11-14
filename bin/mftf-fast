@@ -113,7 +113,9 @@ if ($sub === 'cache:warm') {
         fwrite(STDERR, sprintf("  no snapshot is kept for: %s\n  kept: %s\n", implode(', ', $unknown), implode(', ', HandlerCache::types())));
         exit(1);
     }
-    $restored = $cache->restore(true);
+    // A snapshot a generation or a describe saved holds what that run resolved
+    // into it, so only one saved clean is kept or patched; any other is built again.
+    $restored = $cache->restore(true, [], true);
     $cfg = \Magento\FunctionalTestingFramework\Config\MftfApplicationConfig::class;
     $cfg::create(HandlerCache::forceInArgv($argv), $cfg::GENERATION_PHASE, false, $cfg::LEVEL_DEFAULT, true);
     $patch = $cache->patch();
@@ -129,7 +131,7 @@ if ($sub === 'cache:warm') {
     foreach ($cache->warm($types, $restored) as $type => $secs) {
         printf("  built %-14s %6.2fs\n", $type, $secs);
     }
-    printf("  snapshotted: %s\n", implode(', ', $cache->persist($restored)) ?: 'nothing');
+    printf("  snapshotted: %s\n", implode(', ', $cache->persist($restored, true)) ?: 'nothing');
     exit(0);
 }
 
@@ -177,7 +179,7 @@ if ($sub === 'describe:test' || $sub === 'describe:group' || $sub === 'describe:
         $cache->forgetPatched();
         if ($cache->validatePatch()) {
             $cache->settleOrder();
-            $cache->persist($restored);
+            $cache->persist($restored, true);
         }
         exit(0);
     }
