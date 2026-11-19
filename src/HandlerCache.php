@@ -32,6 +32,11 @@ final class HandlerCache
      */
     private const WINDOWS = PHP_OS_FAMILY === 'Windows';
 
+    /** What find prints per file: path, mtime and size. macOS's BSD find has no -printf, so there stat prints them. */
+    private const PRINT = PHP_OS_FAMILY === 'Darwin'
+        ? " -exec stat -f '%N%t%Fm%t%z' {} +"
+        : " -printf '%p\\t%T@\\t%s\\n'";
+
     /**
      * Handlers worth caching, mapped to the Test/Mftf subdirectory that feeds them.
      *
@@ -685,7 +690,7 @@ final class HandlerCache
             $dirs === [] => [],
             self::WINDOWS => self::xmlFiles($dirs),
             default => explode("\n", (string) shell_exec('find ' . implode(' ', array_map('escapeshellarg', $dirs))
-                . " -name '*.xml' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null")),
+                . " -name '*.xml'" . self::PRINT . ' 2>/dev/null')),
         };
 
         foreach ($lines as $line) {
@@ -704,7 +709,7 @@ final class HandlerCache
             $listed = self::WINDOWS
                 ? self::xmlFiles([$dir], static fn (string $name): bool => $name[0] === '.' || $name === '_generated')
                 : explode("\n", (string) shell_exec('find ' . escapeshellarg($dir)
-                    . " -name '*.xml' -not -path '*/.*' -not -path '*/_generated/*' -printf '%p\\t%T@\\t%s\\n' 2>/dev/null"));
+                    . " -name '*.xml' -not -path '*/.*' -not -path '*/_generated/*'" . self::PRINT . ' 2>/dev/null'));
             foreach ($listed as $line) {
                 $path = (string)strstr($line, "\t", true);
                 $folder = explode('/', substr($path, strlen($dir) + 1))[$depth] ?? null;
