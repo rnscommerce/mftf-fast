@@ -57,6 +57,15 @@ final class EnabledModulesTest extends TestCase
         self::assertSame('STALE', $this->testSnapshotValidity());
     }
 
+    public function testAModuleAddedByTheAllowlistMakesTheSnapshotStale(): void
+    {
+        $this->modules(['Magento_Backend' => 1, 'Magento_AdminNotification' => 0]);
+        $this->fast('generate:tests', $this->magentoBp());
+        self::assertSame('yes', $this->testSnapshotValidity());
+
+        self::assertSame('STALE', $this->testSnapshotValidity('MODULE_ALLOWLIST=Magento_AdminNotification'));
+    }
+
     /** @param array<string,int> $modules */
     private function modules(array $modules): void
     {
@@ -68,9 +77,9 @@ final class EnabledModulesTest extends TestCase
         return 'MAGENTO_BP=' . escapeshellarg($this->root . '/instance');
     }
 
-    private function testSnapshotValidity(): string
+    private function testSnapshotValidity(string $env = ''): string
     {
-        [, $out] = $this->fast('cache:status', $this->magentoBp());
+        [, $out] = $this->fast('cache:status', $this->magentoBp() . ' ' . $env);
         preg_match('/^test\s+\S+\s+(\S+)/m', $out, $m);
         return $m[1] ?? 'missing';
     }

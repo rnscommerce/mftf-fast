@@ -68,7 +68,8 @@ a change to any of it is a miss and one slow run, never a wrong answer:
 
 - the path, size and modification time of every XML file under a `Test/Mftf`
   folder in `vendor` and `app/code`
-- the modules enabled in `app/etc/config.php`, in `MAGENTO_BP` where it is set
+- the modules enabled in `app/etc/config.php`, in `MAGENTO_BP` where it is set,
+  and the ones `MODULE_ALLOWLIST` adds
 - whether the run had `--force`
 - the MFTF version, the PHP version and `MAGENTO_BP`
 

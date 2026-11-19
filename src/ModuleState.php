@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace MftfFast;
 
 /**
- * Which Magento modules the instance has switched on.
+ * Which Magento modules the instance has switched on, and the ones
+ * MODULE_ALLOWLIST adds to them.
  *
  * MFTF asks the running instance, but the answer is written to
  * `app/etc/config.php` by `bin/magento module:enable` and `module:disable`, and
@@ -37,21 +38,29 @@ final class ModuleState
     {
         $name = $this->nameOf($dir);
 
-        return $name === null || ($this->all()[$name] ?? true);
+        return $name === null || in_array($name, self::allowlist(), true) || ($this->all()[$name] ?? true);
     }
 
     /** A digest of what is on, for cache keys that must change when it does. */
     public function digest(): string
     {
-        $state = $this->all();
-        if ($state === []) {
+        $on = array_keys(array_filter($this->all()));
+        $added = self::allowlist();
+        if ($on === [] && $added === []) {
             return 'unknown';
         }
-
-        $on = array_keys(array_filter($state));
         sort($on);
+        sort($added);
 
-        return md5(implode(',', $on));
+        return md5(implode(',', $on) . '+' . implode(',', $added));
+    }
+
+    /** @return list<string> the modules MODULE_ALLOWLIST adds, read as MFTF reads it */
+    private static function allowlist(): array
+    {
+        $named = array_map('trim', explode(',', (string) getenv('MODULE_ALLOWLIST')));
+
+        return array_values(array_filter($named, static fn(string $module): bool => $module !== ''));
     }
 
     /**
